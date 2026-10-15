@@ -84,6 +84,11 @@ vice versa.  These will not be the same as standard native variables, but will
 be stored in a language-appropriate collection (for example the `$env:` variable
 scope in pwsh).
 
+Because a maash module must persist and must do substantial transformations on
+the data going in/out, it can be more than just a .json definition.  A maash
+module will likely need an underyling dll or npm package or other form of
+assembly in the target language to interact with maash.
+
 ## maactl
 
 maactl can be used both interactively *and* in script.  However, in script the
