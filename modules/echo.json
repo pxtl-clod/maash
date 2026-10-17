@@ -1,0 +1,17 @@
+{
+  "name": "echo",
+  "interpreter": {
+    "command": "python3",
+    "args": ["/workspace/maash/modules/echo.py"]
+  },
+  "operators": {
+    "": {
+      "description": "Primary: echo operand back",
+      "bracketed": false
+    },
+    "+": {
+      "description": "Upper-case the operand",
+      "bracketed": false
+    }
+  }
+}

@@ -18,6 +18,9 @@ public sealed class ResolvedOperator
 
     /// <summary>Full operator string following <c>@@</c> (i.e. after the two @ signs).</summary>
     public required string OperatorString { get; init; }
+
+    /// <summary>The operator token emitted to <c>maash eval</c> (always starts with <c>@@</c>).</summary>
+    public string EvalArg => "@@" + OperatorString;
 }
 
 public class MaashPreprocessorException : Exception
@@ -32,49 +35,6 @@ public class MaashPreprocessorException : Exception
 /// </summary>
 public static class Preprocessor
 {
-    /// <summary>
-    /// Builds resolved operator-string candidates for a loaded module.
-    /// Yields (resolvedOperator, operatorString) pairs.
-    /// </summary>
-    public static IEnumerable<(ResolvedOperator Resolved, string OperatorString)> BuildOperatorStrings(
-        ModuleRegistry modules, LoadedModule module)
-    {
-        foreach (var pair in ModuleRegistry.BuildOperatorStrings(module.Module, module.Infix))
-        {
-            var (suffix, opString) = pair;
-            var def = module.Module.Operators[suffix];
-            yield return (new ResolvedOperator
-            {
-                Alias = module.Alias,
-                Definition = def,
-                Suffix = suffix,
-                OperatorString = opString
-            }, opString);
-        }
-    }
-
-    /// <summary>
-    /// Greedy longest-operator-wins match at a <c>@@</c> position.
-    /// Returns null on no match.
-    /// </summary>
-    public static ResolvedOperator? TryResolve(ModuleRegistry modules, int position, string text)
-    {
-        ResolvedOperator? best = null;
-        foreach (var loaded in modules.Modules)
-        {
-            foreach (var (resolved, opString) in BuildOperatorStrings(modules, loaded))
-            {
-                if (text.Length - (position + 2) < opString.Length) continue;
-                if (!text.AsSpan(position + 2, opString.Length).StartsWith(opString, StringComparison.Ordinal))
-                    continue;
-
-                if (best is null || opString.Length > best.OperatorString.Length)
-                    best = resolved;
-            }
-        }
-        return best;
-    }
-
     /// <summary>Finds the next unescaped <c>@@</c> at or after pos.</summary>
     public static int FindOperator(string text, int pos)
     {
@@ -100,9 +60,38 @@ public static class Preprocessor
     }
 
     /// <summary>
+    /// Greedy longest-operator-wins match at a <c>@@</c> position.
+    /// Returns null on no match.
+    /// </summary>
+    public static ResolvedOperator? TryResolve(ModuleRegistry modules, int position, string text)
+    {
+        ResolvedOperator? best = null;
+        var primaryAlias = modules.PrimaryAlias;
+        foreach (var loaded in modules.Modules)
+        {
+            foreach (var (suffix, opString) in ModuleRegistry.BuildOperatorStrings(loaded.Module, loaded.Infix, loaded.Alias == primaryAlias, loaded.AllowEmptySuffix))
+            {
+                if (text.Length - (position + 2) < opString.Length) continue;
+                if (!text.AsSpan(position + 2, opString.Length).StartsWith(opString, StringComparison.Ordinal))
+                    continue;
+
+                if (best is null || opString.Length > best.OperatorString.Length)
+                    best = new ResolvedOperator
+                    {
+                        Alias = loaded.Alias,
+                        Definition = loaded.Module.Operators[suffix],
+                        Suffix = suffix,
+                        OperatorString = opString
+                    };
+            }
+        }
+        return best;
+    }
+
+    /// <summary>
     /// Runs the preprocessor over the whole text. Replaces each maash operator
     /// invocation with a bash command substitution
-    /// <c>$(maash eval @@<opterand>)</c>.
+    /// <c>$(maash eval '@@OPT' operand)</c>.
     /// </summary>
     public static PreprocessResult Run(ModuleRegistry modules, string text)
     {
@@ -115,10 +104,10 @@ public static class Preprocessor
             var idx = FindOperator(text, pos);
             if (idx < 0)
             {
-                output.Append(text, pos, text.Length - pos);
+                output.Append(Unescape(text, pos, text.Length - pos));
                 break;
             }
-            output.Append(text, pos, idx - pos);
+            output.Append(Unescape(text, pos, idx - pos));
 
             var resolved = TryResolve(modules, idx, text)
                 ?? throw new MaashPreprocessorException(
@@ -139,10 +128,20 @@ public static class Preprocessor
                     throw new MaashPreprocessorException(
                         $"Unterminated bracketed operand for operator '@@{resolved.OperatorString}'.");
                 operand = text[afterToken..close]; // strip trailing ]
-                end = close + 3;                    // len("]@@")
+                end = close + 3;                    // len(")]@@")
             }
             else
             {
+                // Non-bracketed operands may span multiple lines. Send all remaining
+                // plausible text to the module: everything up to the next unescaped
+                // maash operator token (or EOF). It is the module's responsibility to
+                // report how much of the operand it parsed; the evaluator uses that to
+                // decide where to resume scanning, so nothing is lost in the text
+                // the operator didn't consume.
+                //
+                // For the preprocessor (sugar mode) we don't have the module's parse
+                // length, so the emitted `maash eval` call must quote the whole
+                // remaining run; `maash eval` at runtime handles partial consumption.
                 var next = FindOperator(text, afterToken);
                 var stop = next < 0 ? text.Length : next;
                 operand = text[afterToken..stop];
@@ -152,7 +151,7 @@ public static class Preprocessor
             // Convention: operators are invoked without leading whitespace.
             var t = operand.TrimStart();
 
-            output.Append("$(");
+            output.Append("$(maash eval ");
             output.Append(QuoteBash("@@" + resolved.OperatorString));
             output.Append(' ');
             output.Append(QuoteBash(t));
@@ -165,7 +164,35 @@ public static class Preprocessor
     }
 
     /// <summary>
-    /// Bash single-quote quoting, escaped as <c>'\"'</c>.
+    /// Emit a run of source text verbatim, but unescape any <c>\@@</c>
+    /// sequences (a backslash immediately before an operator token) into a
+    /// bare, literal <c>@@</c>. Implements the README backslash rule:
+    /// a leading backslash on an operator means "literal, no operator".
+    /// </summary>
+    public static string Unescape(string text, int start, int length)
+    {
+        var slice = text.Substring(start, length);
+        var outp = new StringBuilder(slice.Length);
+        var i = 0;
+        while (i < slice.Length)
+        {
+            if (slice[i] == '\\' && i + 2 < slice.Length && slice[i + 1] == '@' && slice[i + 2] == '@')
+            {
+                outp.Append("@@");
+                i += 3;
+            }
+            else
+            {
+                outp.Append(slice[i]);
+                i++;
+            }
+        }
+        return outp.ToString();
+    }
+
+    /// <summary>
+    /// Bash single-quote quoting, escaping embedded single quotes using the
+    /// classic <c>'\''</c> splice.
     /// </summary>
     public static string QuoteBash(string s)
     {
@@ -175,12 +202,7 @@ public static class Preprocessor
         {
             if (s[i] == '\'')
             {
-                // Close single-quote, insert literal ", reopen single-quote.
-                // The literal double-quote is fine inside quotes too, but the
-                // close/reopen handles it uniformly.
-                builder.Append("'");
-                builder.Append('\"');
-                builder.Append("'");
+                builder.Append("\'\"\'");
             }
             else
             {

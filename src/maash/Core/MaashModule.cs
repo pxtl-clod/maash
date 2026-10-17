@@ -1,37 +1,58 @@
-using System.Text.Json.Serialization;
-
 namespace Maash.Core;
 
-/// <summary>A maash module as declared in a module json definition.</summary>
-public class MaashModule
+using System.Collections.Generic;
+using System.Text.Json.Serialization;
+
+/// <summary>
+/// Parsed module definition (JSON schema from README §"Module JSON").
+/// </summary>
+public sealed record MaashModule
 {
-    /// <summary>Module name: the extensionless path relative to a module search dir.</summary>
-    public string Name { get; set; } = "";
+    private const string Version = "v1";
 
-    /// <summary>Optional interpreter command used to spawn the persistent module process.</summary>
-    public MaashInterpreter? Interpreter { get; set; }
+    [JsonPropertyName("version")]
+    public string VersionStr { get; init; } = Version;
 
-    /// <summary>Operators keyed by their registered suffix (empty suffix "" is the default operator).</summary>
-    public Dictionary<string, MaashOperatorDefinition> Operators { get; } = new();
+    [JsonPropertyName("name")]
+    public string Name { get; init; } = "";
 
-    public Dictionary<string, object?> Metadata { get; set; } = new();
+    [JsonPropertyName("interpreter")]
+    public MaashInterpreter? Interpreter { get; init; }
+
+    [JsonPropertyName("shell")]
+    public string? Shell { get; init; } = null;
+
+    [JsonPropertyName("description")]
+    public string? Description { get; init; }
+
+    [JsonPropertyName("operators")]
+    public Dictionary<string, MaashOperatorDefinition> Operators { get; init; } = new();
+
+    /// <summary>Directory the module was loaded from (for shell-script relative paths). Not serialized.</summary>
+    [JsonIgnore]
+    public string? SourceDir { get; init; }
+
+    /// <summary>The file this module definition was loaded from (if any). Not serialized.</summary>
+    [JsonIgnore]
+    public string? SourceFile { get; init; }
 }
 
 /// <summary>How to spawn the persistent interpreter process for a module.</summary>
-public class MaashInterpreter
+public sealed record MaashInterpreter
 {
-    /// <summary>Command (and its fixed arguments) launched per module-session.</summary>
-    public string? Command { get; set; }
+    [JsonPropertyName("command")]
+    public string? Command { get; init; }
+
+    [JsonPropertyName("args")]
+    public string[] Args { get; init; } = System.Array.Empty<string>();
 }
 
-public class MaashOperatorDefinition
+/// <summary>A single operator within a module.</summary>
+public sealed record MaashOperatorDefinition
 {
-    public string Description { get; set; } = "";
+    [JsonPropertyName("description")]
+    public string Description { get; init; } = string.Empty;
 
-    /// <summary>
-    /// Bracketed mode: the operand ends at the next unescaped <c>]@@</c>, as the module
-    /// cannot itself report the parsed operand length.
-    /// </summary>
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
-    public bool Bracketed { get; set; }
+    [JsonPropertyName("bracketed")]
+    public bool Bracketed { get; init; }
 }

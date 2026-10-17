@@ -7,14 +7,27 @@ namespace Maash.Core;
 /// operators (with a warning).
 /// </summary>
 /// <summary>A module loaded with its resolved identity (alias is the lookup key).</summary>
-public sealed record LoadedModule(MaashModule Module, string Alias, string Infix, bool Primary);
+public sealed record LoadedModule(MaashModule Module, string Alias, string Infix, bool Primary, bool SuppressAlnumRule)
+{
+    /// <summary>
+    /// Whether this module's empty (primary) suffix may be a bare infix.
+    /// Alphanumeric infixes force the "@" suffix on the primary operator
+    /// unless the rule was suppressed at load time.
+    /// </summary>
+    public bool AllowEmptySuffix => SuppressAlnumRule || !IsAlnumInfix(Infix);
+
+    /// <summary>An infix is alphanumeric when non-empty and every char is a letter or digit.</summary>
+    public static bool IsAlnumInfix(string? infix)
+    {
+        if (string.IsNullOrEmpty(infix)) return false;
+        foreach (var c in infix) if (!char.IsLetterOrDigit(c)) return false;
+        return true;
+    }
+}
 
 public sealed class ModuleRegistry
 {
-    /// <summary>Back-reference convenience: LoadedModule is top-level in this namespace.</summary>
-    public sealed record loadedModuleAlias;
-
-
+    
     /// <summary>A fully-resolved operator: the operator string following <c>@@</c>.</summary>
     public sealed record LoadedOperator(
         string OperatorString, string Alias, string Suffix, bool ShadowedByNonPrimary);
@@ -27,8 +40,9 @@ public sealed class ModuleRegistry
     private readonly Dictionary<string, LoadedModule> _modules = new(StringComparer.Ordinal);
     private string? _inferredPrimaryAlias;
 
-    public bool TryGetModule(string alias, out LoadedModule module)
+    public bool TryGetModule(string alias, out LoadedModule? module)
     {
+        module = null;
         return _modules.TryGetValue(alias, out module);
     }
 
@@ -44,7 +58,8 @@ public sealed class ModuleRegistry
         }
     }
 
-    public List<string> Load(MaashModule module, string? alias, string? infix, bool primary, bool allowClobber = false)
+    public List<string> Load(MaashModule module, string? alias, string? infix, bool primary,
+        bool allowClobber = false, bool suppressAlnumRule = false)
     {
         var warnings = new List<string>();
         var name = string.IsNullOrEmpty(alias) ? module.Name : alias;
@@ -52,11 +67,20 @@ public sealed class ModuleRegistry
         if (_modules.ContainsKey(name))
             throw new InvalidOperationException($"Module alias '{name}' is already loaded.");
 
-        var effectivePrimary = primary;
-        if (!_modules.Any() && !primary)
+        var isFirst = !_modules.Any();
+        if (isFirst && !primary)
             _inferredPrimaryAlias = name;
 
-        _modules[name] = new LoadedModule(module, name, infix ?? module.Name, effectivePrimary);
+        // A second non-primary load makes the inferred primary ambiguous: WARN and drop the flag.
+        if (isFirst == false && primary == false && _inferredPrimaryAlias is not null && _inferredPrimaryAlias != name)
+        {
+            var old = _modules[_inferredPrimaryAlias];
+            _modules[_inferredPrimaryAlias] = old with { Primary = false };
+            warnings.Add($"WARN: primary is ambiguous (module '{name}' loaded after '{_inferredPrimaryAlias}'); primary flag removed from '{_inferredPrimaryAlias}'.");
+            _inferredPrimaryAlias = null;
+        }
+
+        _modules[name] = new LoadedModule(module, name, infix ?? module.Name, primary, suppressAlnumRule);
 
         if (primary && _inferredPrimaryAlias is not null && _inferredPrimaryAlias != name)
         {
@@ -68,10 +92,31 @@ public sealed class ModuleRegistry
         return warnings;
     }
 
-    public static IEnumerable<(string, string)> BuildOperatorStrings(MaashModule module, string infix)
+    /// <summary>
+    /// Operator strings for a module. The primary module registers its operators
+    /// unprefixed (@@ + suffix) and, when it has an infix, ALSO on the infix
+    /// (so a shadowed primary can still be reached through its infix). Non-primary
+    /// modules register only on their infix. Alphanumeric infixes force the "@"
+    /// suffix on the empty (primary) suffix unless <paramref name="allowEmptySuffix"/>.
+    /// Yields (originalSuffix, operatorStringAfterAtAt).
+    /// </summary>
+    public static IEnumerable<(string, string)> BuildOperatorStrings(MaashModule module, string infix,
+        bool isPrimary = false, bool allowEmptySuffix = true)
     {
         foreach (var (suffix, _) in module.Operators)
-            yield return (suffix, infix + suffix);
+        {
+            var effective = (suffix.Length == 0 && !allowEmptySuffix) ? "@" : suffix;
+            if (isPrimary)
+            {
+                yield return (suffix, suffix); // unprefixed: @@<suffix>
+                if (infix.Length > 0)
+                    yield return (suffix, infix + effective); // also reachable on the infix
+            }
+            else
+            {
+                yield return (suffix, infix + effective);
+            }
+        }
     }
 
     public List<string> Move(string alias, string? newInfix, bool? primary)
@@ -116,7 +161,7 @@ public sealed class ModuleRegistry
 
         foreach (var loaded in ordered)
         {
-            foreach (var (suffix, opString) in BuildOperatorStrings(loaded.Module, loaded.Infix))
+            foreach (var (suffix, opString) in BuildOperatorStrings(loaded.Module, loaded.Infix, loaded.Alias == primaryAlias, loaded.AllowEmptySuffix))
             {
                 bool collisionWarned = false;
                 if (Operators.TryGetValue(opString, out var existing) && existing.Alias != loaded.Alias)
