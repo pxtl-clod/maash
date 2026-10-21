@@ -81,6 +81,13 @@ public sealed class ModuleRegistry
         }
 
         _modules[name] = new LoadedModule(module, name, infix ?? module.Name, primary, suppressAlnumRule);
+        
+        // If the only module is the inferred primary, make it primary so it gets
+        // both unprefixed and infix operator registrations.
+        var effectivePrimary = primary || (_inferredPrimaryAlias == name && _modules.Count == 1 && !primary);
+        if (effectivePrimary && !primary) {
+            _modules[name] = _modules[name] with { Primary = true };
+        }
 
         if (primary && _inferredPrimaryAlias is not null && _inferredPrimaryAlias != name)
         {

@@ -69,8 +69,8 @@ public static class Ctl
 
         // use [module] -f|--file, -i|--inline, -a|--alias, -x|--infix, -p|--primary, --allowclobber, --suppress-alnum-rule
         var useCmd = new Command("use", "Load a module by name (search dirs), file, or inline JSON.");
-        var moduleArg = new Argument<string?>("module") { Arity = ArgumentArity.ZeroOrOne, Description = "Module name (path relative to a module search dir); or use -f/-i." };
-        useCmd.Add(moduleArg);
+        var moduleArg = new Argument<string?>("module") { Arity = ArgumentArity.ZeroOrOne, Description = "Module name (path relative to a module search dir); or use -f/-i. Use '-' for the primary position." };
+        useCmd.Add((Argument) moduleArg);
         foreach (var o in new Option[] { f, i, a, x, p, ac, sar, QuietOpt() }) useCmd.Add(o);
         useCmd.SetAction(pr => RunUse(pr, pr.GetValue<string?>(moduleArg), f, i, a, x, p, ac, sar));
         ctl.Add(useCmd);
@@ -85,8 +85,8 @@ public static class Ctl
 
         // load [file-path] - alias of use -f
         var loadCmd = new Command("load", "Load a module file (alias of 'use -f').");
-        var loadFileArg = new Argument<string>("file") { Description = "Path to a module JSON file." };
-        loadCmd.Add(loadFileArg);
+        var loadFileArg = new Argument<string>("file") { Description = "Path to a module JSON file. Use '-' for the primary position." };
+        loadCmd.Add((Argument) loadFileArg);
         foreach (var o in new Option[] { a, x, p, ac, sar }) loadCmd.Add(o);
         loadCmd.SetAction(pr => UseRun(pr, pr.GetRequiredValue<string>(loadFileArg), null, a, x, p, ac, sar, asFile: true));
         ctl.Add(loadCmd);
@@ -237,9 +237,13 @@ public static class Ctl
     // ---------- module loading ----------
 
     static (MaashModule, string) LoadByNameOrPath(string nameOrPath)
+        => LoadModulePath(nameOrPath, null);
+
+    static (MaashModule, string) LoadModulePath(string nameOrPath, string? baseDir)
     {
-        if (nameOrPath.EndsWith(".json") || File.Exists(nameOrPath))
-            return ModuleSource.LoadFromFile(nameOrPath);
+        var path = ResolveModulePath(nameOrPath, baseDir);
+        if (path.EndsWith(".json") || File.Exists(path))
+            return ModuleSource.LoadFromFile(path);
         var found = ModuleSource.FindByName(nameOrPath);
         if (found != null) return ModuleSource.LoadFromFile(found);
         throw new MaashException("module not found: " + nameOrPath + " (search dirs: " + string.Join(":", ModuleSource.SearchDirs) + ")");
@@ -256,7 +260,26 @@ public static class Ctl
 
     // ---------- script header support ----------
 
-    public static (HeaderDirective Directive, List<string> Warnings) ApplyHeaderLine(ModuleRegistry reg, string line, bool authoritativeUse = false)
+    /// <summary>
+    /// Resolve a module path from a script header/CLI relative to the script's
+    /// directory (so scripts are portable), falling back to the CWD-relative
+    /// interpretation when no base dir is available.
+    /// </summary>
+    internal static string ResolveModulePath(string path, string? baseDir)
+    {
+        if (path.StartsWith("-")) return path;
+        // Try baseDir-relative (script-portable) first, then CWD-relative.
+        if (!string.IsNullOrEmpty(baseDir) && !Path.IsPathRooted(path))
+        {
+            var combined = Path.Combine(baseDir, path);
+            if (File.Exists(combined)) return combined;
+        }
+        if (Path.IsPathRooted(path)) return path;
+        if (File.Exists(path)) return path;
+        return path;
+    }
+
+    public static (HeaderDirective Directive, List<string> Warnings) ApplyHeaderLine(ModuleRegistry reg, string line, bool authoritativeUse = false, string? baseDir = null)
     {
         var warns = new List<string>();
         var d = new HeaderDirective();
@@ -265,9 +288,18 @@ public static class Ctl
 
         d.Verb = fields[0];
         var pos = 1;
-        while (pos < fields.Length && fields[pos].StartsWith("-"))
+        while (pos < fields.Length)
         {
             var tok = fields[pos];
+            if (!tok.StartsWith("-"))
+            {
+                // Positional: first one is the module name; a second is an alias
+                // (useful with -f where the name is derived from the file).
+                if (d.Name == null) d.Name = tok;
+                else if (d.Alias == null) d.Alias = tok;
+                pos++;
+                continue;
+            }
             string val = "";
             bool hasVal = pos + 1 < fields.Length && !fields[pos + 1].StartsWith("-");
             if (hasVal) { val = fields[pos + 1]; pos += 2; } else pos++;
@@ -281,13 +313,16 @@ public static class Ctl
                 case "-x": case "--infix": d.Infix = val; break;
                 case "-q": case "--quiet": break;
                 case "-f": case "--file":
-                    d.Name = val; d.IsFile = true; pos++; break;
+                    d.IsFile = true;
+                    if (d.Name != null && d.Alias == null && d.Name != val && val != "")
+                        d.Alias = d.Name; // 'use <name> -f <file>': name becomes the alias
+                    if (val != "") d.Name = val;
+                    break;
+                case "-i": case "--inline":
+                    // Inline JSON in a header is not supported (use a file or search-dir module).
+                    break;
             }
         }
-        // -f/--file consumed its path value in the option loop (pos advanced past it).
-        // Any further positional is an optional alias for the file.
-        if (d.IsFile && pos < fields.Length && d.Alias == null) { d.Alias = fields[pos]; pos++; }
-        if (!d.IsFile && d.Name == null && pos < fields.Length) d.Name = fields[pos];
 
         switch (d.Verb)
         {
@@ -298,15 +333,15 @@ public static class Ctl
                     warns.Add("maactl: 'use'/'load' requires a module name or -f/--file value.");
                     break;
                 }
-                var (mod, _) = LoadByNameOrPath(d.Name!);
+        var (mod, _) = LoadModulePath(d.Name!, baseDir);
                 var alias = d.Alias ?? d.Name;
                 // In a script header a 'use' for an already-loaded alias is re-entrant:
                 // the header is the authoritative declaration, so clobber the prior load.
-        if (authoritativeUse && reg.TryGetModule(alias, out _))
+                if (authoritativeUse && reg.TryGetModule(alias, out _))
                     reg.Remove(alias);
-                if (authoritativeUse && d.IsFile && d.Name!.Contains("/") &&
+                if (authoritativeUse && d.IsFile && d.Name is not null && d.Name.Contains("/") &&
                     reg.TryGetModule(System.IO.Path.GetFileNameWithoutExtension(d.Name), out var legacy))
-                    reg.Remove(legacy.Alias); // alias derived from the file path in a prior load
+                    reg.Remove(legacy!.Alias); // alias derived from the file path in a prior load
                 var loadWarns = reg.Load(mod, alias, d.Infix, d.Primary,
                     allowClobber: d.AllowClobber, suppressAlnumRule: d.SuppressAlnumRule);
                 warns.AddRange(loadWarns);

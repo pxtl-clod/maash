@@ -28,12 +28,12 @@ public sealed record MaashModule
     [JsonPropertyName("operators")]
     public Dictionary<string, MaashOperatorDefinition> Operators { get; init; } = new();
 
-    /// <summary>Directory the module was loaded from (for shell-script relative paths). Not serialized.</summary>
-    [JsonIgnore]
+    /// <summary>Directory the module was loaded from (for shell-script relative paths).</summary>
+    [JsonPropertyName("sourceDir")]
     public string? SourceDir { get; init; }
 
-    /// <summary>The file this module definition was loaded from (if any). Not serialized.</summary>
-    [JsonIgnore]
+    /// <summary>The file this module definition was loaded from (if any).</summary>
+    [JsonPropertyName("sourceFile")]
     public string? SourceFile { get; init; }
 }
 
@@ -45,6 +45,9 @@ public sealed record MaashInterpreter
 
     [JsonPropertyName("args")]
     public string[] Args { get; init; } = System.Array.Empty<string>();
+
+    /// <summary>true if the interpreter command and args are relative to the module's SourceDir.</summary>
+    public bool? RelativePaths { get; init; }
 }
 
 /// <summary>A single operator within a module.</summary>

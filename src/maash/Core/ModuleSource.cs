@@ -24,6 +24,10 @@ public static class ModuleSource
             if (!string.IsNullOrEmpty(env))
                 foreach (var p in env.Split(':', StringSplitOptions.RemoveEmptyEntries))
                     list.Add(p);
+            // Development convenience: fall back to <cwd>/modules if it has a module.
+            var cwdModules = System.IO.Path.Combine(Environment.CurrentDirectory, "modules");
+            if (System.IO.Directory.Exists(cwdModules))
+                list.Add(cwdModules);
             list.Add("/usr/local/share/maash");
             var home = Environment.GetEnvironmentVariable("HOME");
             if (!string.IsNullOrEmpty(home))

@@ -1,0 +1,6 @@
+use echo
+---
+first=$( @@ hello one) second=$( @@+ UPPER TWO) tail
+echo first=$first second=$second
+echo bracketed=$( @@#[a b c]@@) end
+echo esc \@@ notop

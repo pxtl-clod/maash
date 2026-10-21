@@ -2,7 +2,10 @@
   "name": "echo",
   "interpreter": {
     "command": "python3",
-    "args": ["/workspace/maash/modules/echo.py"]
+    "args": [
+      "echo.py"
+    ],
+    "relativePaths": true
   },
   "operators": {
     "": {
@@ -12,6 +15,10 @@
     "+": {
       "description": "Upper-case the operand",
       "bracketed": false
+    },
+    "#": {
+      "description": "Bracketed: echo operand in [ ... ]@@ form",
+      "bracketed": true
     }
   }
 }

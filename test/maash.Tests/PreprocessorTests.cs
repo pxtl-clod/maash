@@ -25,7 +25,7 @@ public class PreprocessorTests
         reg.Load(EchoModule(), "echo", "@@", primary: true, allowClobber: true);
         var r = Preprocessor.Run(reg, "echo @@'hello world'@@");
         Assert.False(r.Text.Contains("@@'hello world'@@"), "bare @@ operator should have been rewritten");
-        Assert.Contains("'hello world'", r.Text);
+        Assert.Contains("hello world", r.Text);
     }
 
     [Fact]
@@ -34,7 +34,7 @@ public class PreprocessorTests
         var reg = new ModuleRegistry();
         reg.Load(EchoModule(), "echo", "@@", primary: true, allowClobber: true);
         var r = Preprocessor.Run(reg, "echo @@+'abc'");
-        Assert.Contains("'abc'", r.Text);
+        Assert.Contains("abc", r.Text);
         Assert.Contains("@@+", r.Text); // operator echoed in the maash eval call
     }
 

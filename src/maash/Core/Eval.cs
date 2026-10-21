@@ -5,21 +5,10 @@ using System.Text;
 using Maash.State;
 using static Maash.State.StateBridge;
 
-/// <summary>
-/// Result of evaluating a raw line: the transformed text, whether any operator was
-/// found, and an exit code.
-/// </summary>
 public sealed record EvalResult(string Output, bool Parsed, int ExitCode);
 
-/// <summary>
-/// The runtime evaluator. Given a raw bash line, locates maash operators, spawns the
-/// module interpreter for each, and substitutes the module's output for the operand
-/// range. This is the exec path (vs the preprocessor, which only emits `maash eval`
-/// invocations).
-/// </summary>
 public static class Evaluator
 {
-    /// <summary>Build a ModuleRegistry from the persisted session state.</summary>
     public static ModuleRegistry LoadModules()
     {
         var reg = new ModuleRegistry();
@@ -29,7 +18,6 @@ public static class Evaluator
         return reg;
     }
 
-    /// <summary>Evaluate every operator in a raw line; return the transformed text.</summary>
     public static EvalResult Run(string line, bool quiet = false)
     {
         var modules = LoadModules();
@@ -46,24 +34,22 @@ public static class Evaluator
                 ?? throw new MaashException($"No registered maash operator matches '@@' at index {idx}.");
 
             var afterToken = idx + 2 + resolved.OperatorString.Length;
+
+            // Skip optional whitespace after the operator token (same as preprocessor).
+            while (afterToken < line.Length && char.IsWhiteSpace(line[afterToken]))
+                afterToken++;
+
             string operand;
             int end;
-            if (resolved.Definition.Bracketed)
-            {
-                var close = Preprocessor.FindBracketClose(line, afterToken);
-                if (close < 0) throw new MaashException($"Unterminated bracketed operand for '@@{resolved.OperatorString}'.");
-                operand = line[afterToken..close];
-                end = close + 3;
-            }
-            else
-            {
-                var next = Preprocessor.FindOperator(line, afterToken);
-                var stop = next < 0 ? line.Length : next;
-                operand = line[afterToken..stop];
-                end = stop;
-            }
+            // At runtime the operand is already delimited (by the shell in the $(maash eval ...)
+            // wrapper or by the caller). Use the same non-bracketed scoping for all operators:
+            // operand runs to the next @@ token (or EOF). The bracketed flag is only a
+            // preprocessor concern (scoping [ ... ]@@ in raw script text).
+            var next2 = Preprocessor.FindOperator(line, afterToken);
+            var stop = next2 < 0 ? line.Length : next2;
+            operand = line[afterToken..stop];
+            end = stop;
 
-            if (resolved is null) throw new MaashException($"No operator '@@' at index {idx}.");
             var loaded = modules.TryGetModule(resolved.Alias, out var lm) ? lm : null;
             if (loaded?.Module?.Interpreter == null)
                 throw new MaashException($"Module '{resolved.Alias}' has no interpreter configured.");
@@ -84,7 +70,6 @@ public static class Evaluator
         return new EvalResult(outp.ToString(), hasOp, 0);
     }
 
-    /// <summary>Resolve an operator string (the text following @@) to its module + definition.</summary>
     public static (string Alias, MaashOperatorDefinition Def, string OpString)? ResolveOp(ModuleRegistry reg, string opString)
     {
         if (!reg.Operators.TryGetValue(opString, out var lo)) return null;

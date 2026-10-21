@@ -42,6 +42,11 @@ public sealed class Program
         {
             var file = pr.GetValue(fileArg);
             var q = pr.GetValue(quietOpt);
+            if (file == null && !Console.IsInputRedirected)
+            {
+                Console.Error.WriteLine("maash: no input. Pipe a script, use 'maash <file>' or 'maash eval/preprocess'. Use 'maash help' for help.");
+                return 2;
+            }
             return DefaultRun(file, q);
         });
 
@@ -122,12 +127,13 @@ public sealed class Program
         }
 
         var (hdr, body) = SplitHeader(text);
+        var baseDir = file is not null ? Path.GetDirectoryName(Path.GetFullPath(file)) : Directory.GetCurrentDirectory();
         var reg = StateBridge.LoadRegistry();
         if (hdr.Count > 0)
         {
             foreach (var line in hdr)
             {
-                var (d, warns) = Ctl.ApplyHeaderLine(reg, line, authoritativeUse: true);
+                var (d, warns) = Ctl.ApplyHeaderLine(reg, line, authoritativeUse: true, baseDir);
                 foreach (var w in warns) Console.Error.WriteLine("maash: " + w);
             }
             StateBridge.SaveRegistry(reg);
@@ -140,16 +146,26 @@ public sealed class Program
         var pre = Preprocessor.Run(reg, body);
         foreach (var w in pre.Warnings) if (!quiet) Console.Error.WriteLine(w);
 
-        // script/pipe mode: run the preprocessed bash in a bash child process
+        // script/pipe mode: run the preprocessed bash in a bash child process.
+        // The preprocessor emits $(maash eval ...) wrappers, so the child bash
+        // needs `maash` on its PATH. Derive it from the current process path.
+        var maashBin = AppContext.BaseDirectory.TrimEnd(System.IO.Path.DirectorySeparatorChar);
         var psi = new ProcessStartInfo
         {
             FileName = "bash",
             RedirectStandardInput = true,
             UseShellExecute = false
         };
+        // Spawn bash in a subprocess with the script's directory as cwd
+        // (so relative paths in the preprocessed script resolve correctly).
+        var scriptCwd = file is not null
+            ? Path.GetDirectoryName(Path.GetFullPath(file))
+            : Directory.GetCurrentDirectory();
+        psi.WorkingDirectory = scriptCwd;
         psi.ArgumentList.Add("-c");
-        psi.ArgumentList.Add(pre.Text);
-        psi.ArgumentList.Add("--");
+        // Preserve parent's real PATH in the child bash, prepend maash bin dir.
+        var _parentPath = System.Environment.GetEnvironmentVariable("PATH") ?? "/usr/bin:/bin";
+        psi.ArgumentList.Add("export PATH='" + maashBin + ":" + _parentPath.Replace("'", "'\''") + "'; " + pre.Text);
         psi.Environment["MAASH_STATE_KEY"] = StateDir.SessionKey;
         var proc = Process.Start(psi) ?? throw new MaashException("failed to start bash");
         proc.StandardInput.Close();
@@ -169,7 +185,8 @@ public sealed class Program
         var line = opText + (extra.Length > 0 ? " " + string.Join(" ", extra) : "");
         // eval: fully evaluate operators, return their result text to stdout
         var result = Evaluator.Run(line);
-        Console.Out.Write(result.Output);
+        var outp = result.Output.TrimEnd('\n');
+        Console.WriteLine(outp);
         return result.ExitCode;
     }
 
@@ -192,12 +209,13 @@ public sealed class Program
         }
 
         var (hdr, body) = SplitHeader(text);
+        var baseDir = file is not null ? Path.GetDirectoryName(Path.GetFullPath(file)) : Directory.GetCurrentDirectory();
         var reg = StateBridge.LoadRegistry();
         if (hdr.Count > 0)
         {
             foreach (var line in hdr)
             {
-                var (_, warns) = Ctl.ApplyHeaderLine(reg, line, authoritativeUse: true);
+                var (_, warns) = Ctl.ApplyHeaderLine(reg, line, authoritativeUse: true, baseDir);
                 foreach (var w in warns) Console.Error.WriteLine("maash: " + w);
             }
             StateBridge.SaveRegistry(reg);
@@ -256,7 +274,7 @@ public sealed class Program
         while (i < lines.Length)
         {
             var t = lines[i].TrimEnd('\r').TrimStart();
-            if (t == "^---$" || t == "---") break;
+            if (t == "^---$" || t == "---") { i++; break; }
             bool isCtl = t.StartsWith("use ") || t.StartsWith("move ") || t.StartsWith("load ")
                 || t.StartsWith("remove ") || t == "clean" || t.StartsWith("clean ") || t.StartsWith("set-primary ");
             if (isCtl) { hdr.Add(t); i++; continue; }

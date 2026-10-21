@@ -132,18 +132,22 @@ public static class Preprocessor
             }
             else
             {
-                // Non-bracketed operands may span multiple lines. Send all remaining
-                // plausible text to the module: everything up to the next unescaped
-                // maash operator token (or EOF). It is the module's responsibility to
-                // report how much of the operand it parsed; the evaluator uses that to
-                // decide where to resume scanning, so nothing is lost in the text
-                // the operator didn't consume.
+                // Non-bracketed operand scoping.
                 //
-                // For the preprocessor (sugar mode) we don't have the module's parse
-                // length, so the emitted `maash eval` call must quote the whole
-                // remaining run; `maash eval` at runtime handles partial consumption.
+                // If the operator sits inside a bash command-substitution
+                // `$( ... )`, the operand must be scoped to that innermost
+                // unmatched `)`. Maash's sugar wraps each invocation in `$( )`,
+                // so scoping to the nearest balance closes the wrapping `$( )`
+                // cleanly for the outer bash. The module remains responsible for
+                // reporting how much it consumed at runtime (`maash eval`);
+                // here we only need a valid bash-quoted string.
                 var next = FindOperator(text, afterToken);
                 var stop = next < 0 ? text.Length : next;
+
+                var inner = FindBalancedCloseParen(text, afterToken, stop);
+                if (inner >= 0)
+                    stop = inner;
+
                 operand = text[afterToken..stop];
                 end = stop;
             }
@@ -161,6 +165,40 @@ public static class Preprocessor
         }
 
         return new PreprocessResult(output.ToString(), warnings);
+    }
+
+    /// <summary>
+    /// Emit a run of source text verbatim, but unescape any <c>\@@</c>
+    /// sequences (a backslash immediately before an operator token) into a
+    /// bare, literal <c>@@</c>. Implements the README backslash rule:
+    /// a leading backslash on an operator means "literal, no operator".
+    /// </summary>
+    /// <summary>
+    /// Finds the innermost (first) closing paren that balances the deepest enclosing
+    /// `$( ... )` containing <c>start</c>, but only if that paren lies within
+    /// <c>[&#95;start, stop)</c>. Scanning forward from <c>start</c>, it tracks paren
+    /// depth; the first `)` at depth <= 0 is the outermost-enclosing command-
+    /// substitution closer. If the operator is NOT inside a `$( ... )` the search
+    /// yields nothing and -1 is returned. Returns -1 when there is no enclosing
+    /// `$( )` closer before <c>stop</c>.
+    /// </summary>
+    public static int FindBalancedCloseParen(string text, int start, int stop)
+    {
+        // Locate the nearest `$( ` open before the operand start; if it is still
+        // open at `start`, return its matching `)` (the innermost closer), else -1.
+        var back = text.LastIndexOf("$(", start);
+        if (back < 0 || back + 1 >= start) return -1;   // no enclosing $(), or its paren is AT start position
+        var depth = 0;
+        for (var i = back; i < text.Length; i++)
+        {
+            if (text[i] == '(') depth++;
+            else if (text[i] == ')')
+            {
+                depth--;
+                if (depth <= 0) return i;               // matching closer of that $()
+            }
+        }
+        return -1;                                        // that $() never closed
     }
 
     /// <summary>
