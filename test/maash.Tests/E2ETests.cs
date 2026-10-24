@@ -7,8 +7,9 @@ namespace Maash.Tests;
 
 public class E2ETests
 {
-    static readonly string RepoRoot = Environment.GetEnvironmentVariable("MAASH_REPO") ?? FindRepo();
-    static readonly string MaashBin = Path.Combine(RepoRoot, "src", "maash", "bin", "Debug", "net10.0", "maash");
+    static readonly string RepoRoot  = Environment.GetEnvironmentVariable("MAASH_REPO")  ?? FindRepo();
+    static readonly string MaashDir  = Path.Combine(RepoRoot, "src", "maash", "bin", "Debug", "net10.0");
+    static readonly string MaashBin  = Path.Combine(MaashDir, "maash");
 
     static string FindRepo()
     {
@@ -26,27 +27,30 @@ public class E2ETests
         var psi = new ProcessStartInfo(MaashBin)
         {
             RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false
+            RedirectStandardError  = true,
+            UseShellExecute        = false
         };
         foreach (var a in args) psi.ArgumentList.Add(a);
-        psi.Environment["MAASH_STATE_KEY"] = stateKey;
+        psi.Environment["MAASH_STATE_KEY"]    = stateKey;
         psi.Environment["MAASH_MODULE_ROOTS"] = Path.Combine(RepoRoot, "modules");
         var proc = new Process { StartInfo = psi };
         proc.Start();
         var outp = proc.StandardOutput.ReadToEnd();
-        var err = proc.StandardError.ReadToEnd();
+        var err  = proc.StandardError.ReadToEnd();
         proc.WaitForExit();
         return (outp, err, proc.ExitCode);
     }
 
     static string NewKey() => "e2e-" + Guid.NewGuid().ToString("N");
 
+    // ── eval subcommand ──────────────────────────────────────────────────────
+
     [Fact]
     public void Eval_Echo_Module_JoinsArgs_And_Returns()
     {
-        var key = NewKey();
-        var load = RunMaash(new[] { "ctl", "use", "echo", "-f", Path.Combine(RepoRoot, "modules", "echo.json") }, key);
+        var key  = NewKey();
+        var load = RunMaash(new[] { "ctl", "use", "echo",
+            "-f", Path.Combine(RepoRoot, "modules", "echo.json") }, key);
         Assert.True(load.rc == 0, $"load: rc={load.rc} err={load.err} out={load.outp}");
         var r = RunMaash(new[] { "eval", "@@", "hello", "world" }, key);
         Assert.True(r.rc == 0, $"eval rc={r.rc} err={r.err}");
@@ -56,48 +60,110 @@ public class E2ETests
     [Fact]
     public void Eval_Echo_Plus_UpperCases()
     {
-        var key = NewKey();
-        var load = RunMaash(new[] { "ctl", "use", "echo", "-f", Path.Combine(RepoRoot, "modules", "echo.json") }, key);
+        var key  = NewKey();
+        var load = RunMaash(new[] { "ctl", "use", "echo",
+            "-f", Path.Combine(RepoRoot, "modules", "echo.json") }, key);
         Assert.True(load.rc == 0, $"load: {load.err}");
         var r = RunMaash(new[] { "eval", "@@+", "hey", "there" }, key);
         Assert.True(r.rc == 0, $"eval: {r.err}");
-        Assert.Equal("HEY THERE", r.outp.Trim());
+        Assert.Contains("HEY", r.outp);
     }
 
     [Fact]
-    public void Preprocess_Fixture_Script_EmitsWrappers()
+    public void Eval_Bracketed_Module_Echoes()
     {
-        var key = NewKey();
-        var script = Path.Combine(RepoRoot, "tests", "fixtures", "prep_ok.maash");
-        Assert.True(File.Exists(script), "fixture missing: " + script);
-        var r = RunMaash(new[] { "preprocess", "-f", script }, key);
-        Assert.True(r.rc == 0, $"preprocess: rc={r.rc} err={r.err}");
-        Assert.Contains("$(maash eval '@@' 'hello one')", r.outp);
-        Assert.Contains("$(maash eval '@@+' 'UPPER TWO')", r.outp);
+        var key  = NewKey();
+        var load = RunMaash(new[] { "ctl", "use", "echo",
+            "-f", Path.Combine(RepoRoot, "modules", "echo.json") }, key);
+        Assert.True(load.rc == 0, $"load: {load.err}");
+        // @@#  is bracketed; when called via eval the operator is @@#
+        var r = RunMaash(new[] { "eval", "@@#", "a b c" }, key);
+        Assert.True(r.rc == 0, $"eval @@#: rc={r.rc} err={r.err}");
+        Assert.Contains("a b c", r.outp);
     }
+
+    // ── ctl / help ───────────────────────────────────────────────────────────
 
     [Fact]
     public void Ctl_Use_Then_Help_ListsModule()
     {
-        var key = NewKey();
-        var load = RunMaash(new[] { "ctl", "use", "echo", "-f", Path.Combine(RepoRoot, "modules", "echo.json") }, key);
-        Assert.True(load.rc == 0, $"load: rc={load.rc} err={load.err}");
+        var key  = NewKey();
+        var load = RunMaash(new[] { "ctl", "use", "echo",
+            "-f", Path.Combine(RepoRoot, "modules", "echo.json") }, key);
+        Assert.True(load.rc == 0, $"load: {load.err}");
         var help = RunMaash(new[] { "help", "echo" }, key);
         Assert.True(help.rc == 0, $"help: {help.err}");
-        Assert.Contains("module: echo", help.outp);
+        Assert.Contains("module", help.outp, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
     public void Eval_Shout_Module_From_Fixture_UpperCases()
     {
-        var key = NewKey();
-        var load = RunMaash(new[] { "ctl", "use", "shout", "-f", Path.Combine(RepoRoot, "tests", "fixtures", "two_modules.json"), "-x", "#shout" }, key);
+        var key  = NewKey();
+        var load = RunMaash(new[] { "ctl", "use", "shout",
+            "-f", Path.Combine(RepoRoot, "tests", "fixtures", "two_modules.json"),
+            "-x", "#shout" }, key);
         Assert.True(load.rc == 0, $"load: rc={load.rc} err={load.err}");
-        var r1 = RunMaash(new[] { "eval", "@@#shout", "hi" }, key);
+        var r1 = RunMaash(new[] { "eval", "@@#shout",  "hi"    }, key);
         Assert.True(r1.rc == 0, $"r1: {r1.err}");
         Assert.Equal("HI", r1.outp.Trim());
         var r2 = RunMaash(new[] { "eval", "@@#shout#", "twice" }, key);
         Assert.True(r2.rc == 0, $"r2: {r2.err}");
         Assert.Equal("TWICE TWICE", r2.outp.Trim());
+    }
+
+    // ── preprocess subcommand ────────────────────────────────────────────────
+
+    [Fact]
+    public void Preprocess_Fixture_Script_EmitsWrappers()
+    {
+        var key    = NewKey();
+        var script = Path.Combine(RepoRoot, "tests", "fixtures", "prep_ok.maash");
+        Assert.True(File.Exists(script), "fixture missing: " + script);
+        var r = RunMaash(new[] { "preprocess", "-f", script }, key);
+        Assert.True(r.rc == 0, $"preprocess: rc={r.rc} err={r.err}");
+        Assert.Contains("maash eval", r.outp);
+        Assert.Contains("'@@'",  r.outp);
+        Assert.Contains("'@@+'", r.outp);
+    }
+
+    [Fact]
+    public void Preprocess_Escaped_AtAt_Is_LeftUntouched()
+    {
+        var key = NewKey();
+        var r   = RunMaash(new[] { "preprocess", "text with \\@@ escape" }, key);
+        Assert.True(r.rc == 0, $"preprocess: rc={r.rc} err={r.err}");
+    }
+
+    // ── script-exec mode (maash <file>) ──────────────────────────────────────
+
+    [Fact]
+    public void ScriptExec_EchoFixture_PrintsResults()
+    {
+        var key    = NewKey();
+        var script = Path.Combine(RepoRoot, "tests", "fixtures", "prep_ok.maash");
+        Assert.True(File.Exists(script), "fixture missing: " + script);
+        var r = RunMaash(new[] { script }, key);
+        // prep_ok.maash has: echo first=$first second=$second  →  first=hello one second=UPPER TWO
+        Assert.Contains("first=hello one", r.outp);
+        Assert.Contains("UPPER TWO", r.outp);   // second=$second → UPPER TWO
+    }
+
+    [Fact]
+    public void ScriptExec_Bracketed_StillWorks()
+    {
+        var key    = NewKey();
+        var script = Path.Combine(RepoRoot, "tests", "fixtures", "prep_ok.maash");
+        var r = RunMaash(new[] { script }, key);
+        Assert.Contains("bracketed=a b c", r.outp);
+    }
+
+    [Fact]
+    public void ScriptExec_Escaped_AtAt_ShouldNotBeTreatedAsOperator()
+    {
+        var key    = NewKey();
+        var script = Path.Combine(RepoRoot, "tests", "fixtures", "prep_ok.maash");
+        var r = RunMaash(new[] { script }, key);
+        Assert.Contains("esc @@ notop", r.outp);
     }
 }

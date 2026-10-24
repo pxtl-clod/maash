@@ -19,6 +19,7 @@ public class LoadedModuleEntry
 public class MaashRegistryState
 {
     public string? PrimaryAlias { get; set; }
+    public bool PrimaryInferred { get; set; }
     public List<LoadedModuleEntry> Modules { get; set; } = new();
 }
 
@@ -55,15 +56,17 @@ public static class StateBridge
         foreach (var e in state.Modules)
         {
             if (string.IsNullOrEmpty(e.Alias)) continue;
-            reg.Load(e.Module, e.Alias, e.Infix, e.Primary, allowClobber: true);
+            reg.Load(e.Module, e.Alias, e.Infix, e.Primary, allowClobber: true, inferPrimary: false);
         }
+        if (state.PrimaryInferred && state.PrimaryAlias is not null)
+            reg.RestoreInferredPrimary(state.PrimaryAlias);
         return reg;
     }
 
     /// <summary>Serialize a runtime registry into its persisted form.</summary>
     public static MaashRegistryState FromRegistry(ModuleRegistry reg)
     {
-        var s = new MaashRegistryState { PrimaryAlias = reg.PrimaryAlias };
+        var s = new MaashRegistryState { PrimaryAlias = reg.PrimaryAlias, PrimaryInferred = reg.PrimaryInferred };
         foreach (var m in reg.Modules)
             s.Modules.Add(new LoadedModuleEntry
             {

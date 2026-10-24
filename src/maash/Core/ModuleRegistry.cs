@@ -40,6 +40,12 @@ public sealed class ModuleRegistry
     private readonly Dictionary<string, LoadedModule> _modules = new(StringComparer.Ordinal);
     private string? _inferredPrimaryAlias;
 
+    /// <summary>True when the primary exists only by inference (first load without -p), not by an explicit -p.</summary>
+    public bool PrimaryInferred => _inferredPrimaryAlias is not null && _modules.ContainsKey(_inferredPrimaryAlias);
+
+    /// <summary>Restore a persisted inferred-primary alias (state round-trip; the alias must be a loaded module).</summary>
+    public void RestoreInferredPrimary(string? alias) => _inferredPrimaryAlias = alias;
+
     public bool TryGetModule(string alias, out LoadedModule? module)
     {
         module = null;
@@ -58,8 +64,9 @@ public sealed class ModuleRegistry
         }
     }
 
+    /// <param name="inferPrimary">Whether the first non-primary load should be inferred primary. State rebuilds pass false to avoid re-firing the ambiguity WARN.</param>
     public List<string> Load(MaashModule module, string? alias, string? infix, bool primary,
-        bool allowClobber = false, bool suppressAlnumRule = false)
+        bool allowClobber = false, bool suppressAlnumRule = false, bool inferPrimary = true)
     {
         var warnings = new List<string>();
         var name = string.IsNullOrEmpty(alias) ? module.Name : alias;
@@ -68,26 +75,17 @@ public sealed class ModuleRegistry
             throw new InvalidOperationException($"Module alias '{name}' is already loaded.");
 
         var isFirst = !_modules.Any();
-        if (isFirst && !primary)
+        if (isFirst && !primary && inferPrimary)
             _inferredPrimaryAlias = name;
 
         // A second non-primary load makes the inferred primary ambiguous: WARN and drop the flag.
-        if (isFirst == false && primary == false && _inferredPrimaryAlias is not null && _inferredPrimaryAlias != name)
+        if (!isFirst && !primary && inferPrimary && _inferredPrimaryAlias is not null && _inferredPrimaryAlias != name)
         {
-            var old = _modules[_inferredPrimaryAlias];
-            _modules[_inferredPrimaryAlias] = old with { Primary = false };
             warnings.Add($"WARN: primary is ambiguous (module '{name}' loaded after '{_inferredPrimaryAlias}'); primary flag removed from '{_inferredPrimaryAlias}'.");
             _inferredPrimaryAlias = null;
         }
 
         _modules[name] = new LoadedModule(module, name, infix ?? module.Name, primary, suppressAlnumRule);
-        
-        // If the only module is the inferred primary, make it primary so it gets
-        // both unprefixed and infix operator registrations.
-        var effectivePrimary = primary || (_inferredPrimaryAlias == name && _modules.Count == 1 && !primary);
-        if (effectivePrimary && !primary) {
-            _modules[name] = _modules[name] with { Primary = true };
-        }
 
         if (primary && _inferredPrimaryAlias is not null && _inferredPrimaryAlias != name)
         {
@@ -134,6 +132,17 @@ public sealed class ModuleRegistry
 
         if (primary is false && _inferredPrimaryAlias == alias)
             _inferredPrimaryAlias = null;
+
+        if (primary is true)
+        {
+            if (_inferredPrimaryAlias is not null && _inferredPrimaryAlias != alias)
+            {
+                warnings.Add($"WARN: module '{_inferredPrimaryAlias}' was inferred primary; module '{alias}' is now primary.");
+                _inferredPrimaryAlias = null;
+            }
+            else if (_inferredPrimaryAlias == alias)
+                _inferredPrimaryAlias = null; // explicit -p replaces inference
+        }
 
         _modules[alias] = loaded with { Infix = newInfix ?? loaded.Infix, Primary = primary ?? loaded.Primary };
         Reindex(warnings, allowClobber: true);

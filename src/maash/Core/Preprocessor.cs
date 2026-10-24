@@ -121,14 +121,23 @@ public static class Preprocessor
 
             string operand;
             int end;
+            int parenClose = -1;       // index of the enclosing $( ) closer, if any
+            var insideParen = false;   // true when @@ is inside a user $() — no wrapper
             if (resolved.Definition.Bracketed)
             {
                 var close = FindBracketClose(text, afterToken);
                 if (close < 0)
                     throw new MaashPreprocessorException(
                         $"Unterminated bracketed operand for operator '@@{resolved.OperatorString}'.");
-                operand = text[afterToken..close]; // strip trailing ]
-                end = close + 3;                    // len(")]@@")
+                // [ and ] are delimiters, not part of the operand.
+                var os = afterToken;
+                if (os < close && text[os] == '[') os++;
+                operand = text[os..close];
+                end = close + 3;                    // len("]@@")
+                // If the operator sits inside a user $( ), the user's own closer
+                // will close the bare invocation we emit below.
+                var p = FindBalancedCloseParen(text, idx, text.Length);
+                if (p > idx) { insideParen = true; parenClose = p; }
             }
             else
             {
@@ -146,7 +155,11 @@ public static class Preprocessor
 
                 var inner = FindBalancedCloseParen(text, afterToken, stop);
                 if (inner >= 0)
-                    stop = inner;
+                {
+                    stop = inner;         // operand ends at innermost enclosing $( ) closer
+                    parenClose = inner;
+                    insideParen = true;   // preprocessor will NOT emit $( ) wrapper
+                }
 
                 operand = text[afterToken..stop];
                 end = stop;
@@ -155,7 +168,19 @@ public static class Preprocessor
             // Convention: operators are invoked without leading whitespace.
             var t = operand.TrimStart();
 
-            output.Append("$(maash eval ");
+            // When the operator sits inside a user-provided $(), emit the maash eval
+            // invocation bare so it becomes the body of that $(), consuming the closer.
+            // When it is NOT inside $(), wrap the invocation in $( ) so the
+            // substitution result is captured inline in the bash output.
+            if (insideParen)
+            {
+                end = parenClose + 1;    // consume the ) so bash sees $(maash eval … )
+                output.Append("maash eval ");
+            }
+            else
+            {
+                output.Append("$(maash eval ");
+            }
             output.Append(QuoteBash("@@" + resolved.OperatorString));
             output.Append(' ');
             output.Append(QuoteBash(t));
@@ -167,12 +192,6 @@ public static class Preprocessor
         return new PreprocessResult(output.ToString(), warnings);
     }
 
-    /// <summary>
-    /// Emit a run of source text verbatim, but unescape any <c>\@@</c>
-    /// sequences (a backslash immediately before an operator token) into a
-    /// bare, literal <c>@@</c>. Implements the README backslash rule:
-    /// a leading backslash on an operator means "literal, no operator".
-    /// </summary>
     /// <summary>
     /// Finds the innermost (first) closing paren that balances the deepest enclosing
     /// `$( ... )` containing <c>start</c>, but only if that paren lies within

@@ -167,6 +167,10 @@ public sealed class Program
         var _parentPath = System.Environment.GetEnvironmentVariable("PATH") ?? "/usr/bin:/bin";
         psi.ArgumentList.Add("export PATH='" + maashBin + ":" + _parentPath.Replace("'", "'\''") + "'; " + pre.Text);
         psi.Environment["MAASH_STATE_KEY"] = StateDir.SessionKey;
+        // Pass module search roots to child bash so `maash eval` can find modules.
+        var _modRoots = System.Environment.GetEnvironmentVariable("MAASH_MODULE_ROOTS");
+        if (!string.IsNullOrEmpty(_modRoots))
+            psi.Environment["MAASH_MODULE_ROOTS"] = _modRoots;
         var proc = Process.Start(psi) ?? throw new MaashException("failed to start bash");
         proc.StandardInput.Close();
         proc.WaitForExit();
@@ -237,7 +241,9 @@ public sealed class Program
         var reg = StateBridge.LoadRegistry();
         if (reg.TryGetModule(topic, out var lm) && lm is not null)
         {
-            Console.WriteLine("module: " + lm.Alias + "  (infix '" + lm.Infix + "', primary: " + lm.Primary + ")");
+            var isPrimary = reg.PrimaryAlias == lm.Alias;
+            var inferredNote = isPrimary && reg.PrimaryInferred ? " (inferred)" : "";
+            Console.WriteLine("module: " + lm.Alias + "  (infix '" + lm.Infix + "', primary: " + (isPrimary ? "true" : "false") + inferredNote + ")");
             var primaryAlias = reg.PrimaryAlias;
             var seen = new HashSet<string>();
             foreach (var (suffix, op) in ModuleRegistry.BuildOperatorStrings(lm.Module, lm.Infix, lm.Alias == primaryAlias, lm.AllowEmptySuffix))
