@@ -23,7 +23,7 @@ intended to be language agnostic about what those other languages are.
 Note that while maash has a preprocessor, it is *not* intended to output the
 final string values.  The maash preprocessing converts maash operations into
 properly escaped invocations of `maash eval`.  While maash invocations are
-parsed as early as possible, their undlerlying interpreter is invoked within
+parsed as early as possible, their underlying interpreter is invoked within
 their bash commands.  The preprocessor is syntactic sugar over `maash eval`.
 
 ## Interfaces into maash
@@ -70,6 +70,32 @@ lines of the script will be handled as maactl subcommands without the leading
   get help about a module or operator.
   - arg -f [file-path] --file to get help on a module by module file.
 
+### Usage (current implementation)
+
+    maash [script.maash]            preprocess + execute (no args: read stdin, print)
+    maash preprocess [-f FILE]      print preprocessed bash to stdout (TTY: stdin)
+    maash eval <op> [args...]       invoke one module operator (M1 protocol)
+    maash ctl <verb> [args]         module registry (use/move/load/remove/clean)
+    maash init                      print the bash hotkey snippet
+    maash help [topic] [-f FILE]    help for maash, a module, or an operator
+    maash -- <script> [args]        POSIX passthrough; script + args reach bash directly
+
+Header directives are maactl subcommands (`use`, `move`, `load`, `remove`,
+`clean`) without the leading `maactl`, terminated by a `^---$` line. Primary
+module: `-p` flag, or the sole module when exactly one is used.
+
+Module search dirs for `use <name>` (in order):
+
+1. `$MAASH_MODULE_ROOTS` (colon-separated, if set)
+2. `<cwd>/modules` (development convenience)
+3. `/usr/local/share/maash`
+4. `~/.local/share/maash`
+
+A `-f <path>` header resolves relative to the script's dir first, then the CWD.
+
+The hotkey-eval form `maash <name-pending> [string]` is designed but not yet
+implemented; each `maash eval` is a fresh invocation (no cross-operator state).
+
 ## maash modules
 
 A maash module registers one or more maash operators, all of which start with @@,
@@ -86,7 +112,7 @@ scope in pwsh).
 
 Because a maash module must persist and must do substantial transformations on
 the data going in/out, it can be more than just a .json definition.  A maash
-module will likely need an underyling dll or npm package or other form of
+module will likely need an underlying dll or npm package or other form of
 assembly in the target language to interact with maash.
 
 ## maactl

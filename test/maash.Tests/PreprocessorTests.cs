@@ -68,6 +68,26 @@ public class PreprocessorTests
     }
 
     [Fact]
+    public void QuoteBash_Wraps_Simple_Text_In_Single_Quotes()
+    {
+        Assert.Equal("'hello world'", Preprocessor.QuoteBash("hello world"));
+    }
+
+    [Fact]
+    public void QuoteBash_Splices_Embedded_Single_Quotes()
+    {
+        // Classic bash splice for an embedded single quote is the 4-char
+        // sequence: quote, backslash-quote, quote (close, escaped quote,
+        // reopen). So 'it's' must come out as: ' i t  [splice]  s  '.
+        var bs = ((char)92).ToString(); // backslash, indirect to keep this file escape-light
+        var splice = "'" + bs + "'" + "'";
+        var e1 = "'" + "it" + splice + "s" + "'";
+        var e2 = "'" + "a" + splice + "b" + splice + "'";
+        Assert.Equal(e1, Preprocessor.QuoteBash("it's"));
+        Assert.Equal(e2, Preprocessor.QuoteBash("a'b'"));
+    }
+
+    [Fact]
     public void TryResolve_Returns_Null_When_No_Operator_String_Matches()
     {
         // Registry has module with infix "@@xyz" and suffix "abc" → only operator string "xyzabc".

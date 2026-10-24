@@ -282,7 +282,7 @@ public sealed class Program
             var t = lines[i].TrimEnd('\r').TrimStart();
             if (t == "^---$" || t == "---") { i++; break; }
             bool isCtl = t.StartsWith("use ") || t.StartsWith("move ") || t.StartsWith("load ")
-                || t.StartsWith("remove ") || t == "clean" || t.StartsWith("clean ") || t.StartsWith("set-primary ");
+                || t.StartsWith("remove ") || t == "clean" || t.StartsWith("clean ");
             if (isCtl) { hdr.Add(t); i++; continue; }
             if (t.Length > 0) break; // first non-blank, non-ctl line ends header
             i++;

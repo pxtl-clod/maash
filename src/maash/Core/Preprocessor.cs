@@ -259,7 +259,7 @@ public static class Preprocessor
         {
             if (s[i] == '\'')
             {
-                builder.Append("\'\"\'");
+                builder.Append("'\\''");
             }
             else
             {

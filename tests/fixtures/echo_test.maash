@@ -1,4 +1,4 @@
-use echo -f ./modules/echo.json
+use echo -f ../../modules/echo.json
 ---
 echo "a=$( @@ hello world) b=$( @@+ SHOUT NOW)"
 echo "bracketed=$( @@[hi there]@@) end"

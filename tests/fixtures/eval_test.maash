@@ -1,3 +1,3 @@
-use echo -f ./modules/echo.json
+use echo -f ../../modules/echo.json
 ---
-echo "eval form: $(maash eval '@@' 'x y z')"
+echo "eval form: $(maash eval '\@@' 'x y z')"

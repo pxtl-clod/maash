@@ -166,4 +166,42 @@ public class E2ETests
         var r = RunMaash(new[] { script }, key);
         Assert.Contains("esc @@ notop", r.outp);
     }
+
+    [Fact]
+    public void ScriptExec_FileHeader_RelativeToScriptDir()
+    {
+        // Header `use echo -f ../../modules/echo.json` resolves relative to the
+        // script's dir, so this works from any CWD.
+        var key    = NewKey();
+        var script = Path.Combine(RepoRoot, "tests", "fixtures", "echo_test.maash");
+        var r = RunMaash(new[] { script }, key);
+        Assert.True(r.rc == 0, $"rc={r.rc} err={r.err}");
+        Assert.Contains("a=hello world b=SHOUT NOW", r.outp);
+        Assert.Contains("bracketed=[hi there] end", r.outp);
+        Assert.Contains("escaped @@ not an op", r.outp);
+    }
+
+    [Fact]
+    public void ScriptExec_RawEvalInBody_LiteralOperatorEscaped()
+    {
+        // A user-written raw `maash eval` call must escape its literal '@@'
+        // arg as \@@ (README escape rule); the preprocessor leaves it alone.
+        var key    = NewKey();
+        var script = Path.Combine(RepoRoot, "tests", "fixtures", "eval_test.maash");
+        var r = RunMaash(new[] { script }, key);
+        Assert.True(r.rc == 0, $"rc={r.rc} err={r.err}");
+        Assert.Contains("eval form: x y z", r.outp);
+    }
+
+    [Fact]
+    public void ScriptExec_Operand_With_Single_Quote_RoundTrips()
+    {
+        // Regression: QuoteBash must splice embedded single quotes as '\\''
+        // or the generated bash is syntactically broken.
+        var key    = NewKey();
+        var script = Path.Combine(RepoRoot, "tests", "fixtures", "quote_test.maash");
+        var r = RunMaash(new[] { script }, key);
+        Assert.True(r.rc == 0, $"rc={r.rc} err={r.err}");
+        Assert.Contains("q=it's here end", r.outp);
+    }
 }
