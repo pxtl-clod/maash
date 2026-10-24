@@ -204,4 +204,31 @@ public class E2ETests
         Assert.True(r.rc == 0, $"rc={r.rc} err={r.err}");
         Assert.Contains("q=it's here end", r.outp);
     }
+
+    [Fact]
+    public void Ctl_Move_Renames_Module_And_OpsFollow()
+    {
+        var key  = NewKey();
+        var load = RunMaash(new[] { "ctl", "use", "echo",
+            "-f", Path.Combine(RepoRoot, "modules", "echo.json") }, key);
+        Assert.True(load.rc == 0, $"load: rc={load.rc} err={load.err} out={load.outp}");
+        var mv = RunMaash(new[] { "ctl", "move", "echo", "-a", "shout", "-x", "S" }, key);
+        Assert.True(mv.rc == 0, $"move: rc={mv.rc} err={mv.err}");
+        var r = RunMaash(new[] { "eval", "@@S+", "shout", "now" }, key);
+        Assert.True(r.rc == 0, $"eval rc={r.rc} err={r.err}");
+        Assert.Equal("SHOUT NOW", r.outp.Trim());
+    }
+
+    [Fact]
+    public void ScriptExec_MoveHeader_Renames_Module_And_Keeps_Ops()
+    {
+        // Header 'move echo -a shout -x S' renames the module; the bare
+        // primary op and the new infix must both reach the same module.
+        var key    = NewKey();
+        var script = Path.Combine(RepoRoot, "tests", "fixtures", "move_test.maash");
+        var r = RunMaash(new[] { script }, key);
+        Assert.True(r.rc == 0, $"rc={r.rc} err={r.err}");
+        Assert.Contains("a=hello world", r.outp);
+        Assert.Contains("b=SHOUT NOW", r.outp);
+    }
 }

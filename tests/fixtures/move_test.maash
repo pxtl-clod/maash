@@ -1,0 +1,5 @@
+use echo -f ../../modules/echo.json
+move echo -a shout -x S
+---
+echo "a=$( @@ hello world)"
+echo "b=$( @@S+ shout now)"

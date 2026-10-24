@@ -347,17 +347,33 @@ public static class Ctl
                 warns.AddRange(loadWarns);
                 break;
             case "move":
-                if (d.Alias == null)
+                // 'move <existing-alias> [-a new-alias] [-x infix] [-p]' - mirrors
+                // RunMove: positional is the existing alias; -a renames.
+                if (d.Name == null)
                 {
-                    warns.Add("maactl: 'move' requires -a/--alias.");
+                    warns.Add("maactl: 'move' requires an existing module alias.");
                     break;
                 }
-                if (!reg.TryGetModule(d.Alias, out var lm) || lm is null)
+                if (!reg.TryGetModule(d.Name, out var lm) || lm is null)
                 {
-                    warns.Add("maactl: no module with alias '" + d.Alias + "'.");
+                    warns.Add("maactl: no module with alias '" + d.Name + "'.");
                     break;
                 }
-                warns.AddRange(reg.Move(d.Alias, d.Infix, primary: d.Primary ? (bool?)true : null));
+                if (d.Alias != null && d.Alias != d.Name)
+                {
+                    if (reg.TryGetModule(d.Alias, out _))
+                    {
+                        warns.Add("maactl: alias '" + d.Alias + "' is already in use.");
+                        break;
+                    }
+                    reg.Remove(d.Name);
+                    warns.AddRange(reg.Load(lm.Module, d.Alias, d.Infix ?? lm.Infix, d.Primary,
+                        suppressAlnumRule: lm.SuppressAlnumRule));
+                }
+                else
+                {
+                    warns.AddRange(reg.Move(d.Name, d.Infix, primary: d.Primary ? (bool?)true : null));
+                }
                 break;
             case "remove":
                 reg.Remove(d.Alias ?? "");
