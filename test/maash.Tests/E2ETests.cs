@@ -43,6 +43,24 @@ public class E2ETests
 
     static string NewKey() => "e2e-" + Guid.NewGuid().ToString("N");
 
+    static (string outp, string err, int rc) RunBash(string script)
+    {
+        var psi = new ProcessStartInfo("bash")
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError  = true,
+            UseShellExecute        = false
+        };
+        psi.ArgumentList.Add("-c");
+        psi.ArgumentList.Add(script);
+        var proc = new Process { StartInfo = psi };
+        proc.Start();
+        var outp = proc.StandardOutput.ReadToEnd();
+        var err  = proc.StandardError.ReadToEnd();
+        proc.WaitForExit();
+        return (outp, err, proc.ExitCode);
+    }
+
     // ── eval subcommand ──────────────────────────────────────────────────────
 
     [Fact]
@@ -133,6 +151,71 @@ public class E2ETests
         var key = NewKey();
         var r   = RunMaash(new[] { "preprocess", "text with \\@@ escape" }, key);
         Assert.True(r.rc == 0, $"preprocess: rc={r.rc} err={r.err}");
+    }
+
+    // ── render subcommand (hotkey-eval form) ─────────────────────────────────
+
+    [Fact]
+    public void Render_Fixture_FullyEvaluates_Operators()
+    {
+        var key    = NewKey();
+        var script = Path.Combine(RepoRoot, "tests", "fixtures", "render_test.maash");
+        Assert.True(File.Exists(script), "fixture missing: " + script);
+        var r = RunMaash(new[] { "render", "-f", script }, key);
+        Assert.True(r.rc == 0, $"render: rc={r.rc} err={r.err}");
+        // Fully evaluated: no @@ operators and no maash eval wrappers remain.
+        Assert.DoesNotContain("@@", r.outp);
+        Assert.DoesNotContain("maash eval", r.outp);
+        // A $( ) wrapping only the op collapses to a quoted literal...
+        Assert.Contains("one='HELLO ONE'", r.outp);
+        // ...but one with a command prefix keeps the substitution.
+        Assert.Contains("two=$(echo f 'two words')", r.outp);
+        // The rendered output is pure bash that runs as-is.
+        var (outp, berr, brc) = RunBash(r.outp);
+        Assert.True(brc == 0, $"bash: rc={brc} err={berr}");
+        Assert.Contains("one=HELLO ONE", outp);
+        Assert.Contains("two=f two words", outp);
+    }
+
+    [Fact]
+    public void Render_Inline_With_State_Evaluates_Operators()
+    {
+        var key  = NewKey();
+        var load = RunMaash(new[] { "ctl", "use", "echo",
+            "-f", Path.Combine(RepoRoot, "modules", "echo.json") }, key);
+        Assert.True(load.rc == 0, $"load: {load.err}");
+        // Note: a trailing space before ')' is part of the operand (same as
+        // the eval-wrapper path, where the quoted arg keeps it), so the
+        // natural user form has no space before the closer.
+        var r = RunMaash(new[] { "render", "echo $( @@+ hi there) tail" }, key);
+        Assert.True(r.rc == 0, $"render: rc={r.rc} err={r.err}");
+        Assert.Equal("echo 'HI THERE' tail", r.outp);
+    }
+
+    [Fact]
+    public void Render_Stdin_HotkeyForm_Works()
+    {
+        // Mirrors the maash init hotkey function: maash render <<<"$line".
+        var key  = NewKey();
+        var load = RunMaash(new[] { "ctl", "use", "echo",
+            "-f", Path.Combine(RepoRoot, "modules", "echo.json") }, key);
+        Assert.True(load.rc == 0, $"load: {load.err}");
+        var (outp, err, rc) = RunBash(
+            "MAASH_STATE_KEY='" + key + "' " +
+            "MAASH_MODULE_ROOTS='" + Path.Combine(RepoRoot, "modules") + "' " +
+            MaashBin + " render <<< 'echo $( @@+ hi)'");
+        Assert.True(rc == 0, $"render: rc={rc} err={err}");
+        Assert.Equal("echo 'HI'", outp.Trim());
+    }
+
+    [Fact]
+    public void Init_Snippet_Is_Valid_Bash()
+    {
+        // The maash init output must be syntactically valid bash (it gets
+        // eval'd into the user's .bashrc). We can't bind keys in a non-TTY
+        // child, so syntax-check only: 'bash -n' parses without executing.
+        var (outp, err, rc) = RunBash(MaashBin + " init | bash -n");
+        Assert.True(rc == 0, $"bash -n: rc={rc} err={err} out={outp}");
     }
 
     // ── script-exec mode (maash <file>) ──────────────────────────────────────

@@ -79,6 +79,17 @@ public sealed class Program
         });
         root.Add(preCmd);
 
+        var renderCmd = new Command("render", "Hotkey-eval form: fully evaluate @@ ops in the input text and print the resulting bash. (Provisional name; README leaves the hotkey-eval name pending.)");
+        var renderFileOpt = new Option<string?>("-f", "--file") { Description = "Read text from this file.", DefaultValueFactory = _ => (string?)null };
+        var renderTextArg = new Argument<string[]?>("text") { DefaultValueFactory = _ => (string[]?)null, Description = "Inline text (when -f is not given)." };
+        renderCmd.Add(renderFileOpt);
+        renderCmd.Add(renderTextArg);
+        renderCmd.SetAction((ParseResult pr) =>
+        {
+            return RenderRun(pr.GetValue(renderFileOpt), pr.GetValue(renderTextArg));
+        });
+        root.Add(renderCmd);
+
         var initCmd = new Command("init", "Print bash snippet for .bashrc (run via: eval \"$(maash init)\").");
         initCmd.SetAction(_ => { Console.Write(BashSnippet.Init); return 0; });
         root.Add(initCmd);
@@ -192,6 +203,74 @@ public sealed class Program
         var outp = result.Output.TrimEnd('\n');
         Console.WriteLine(outp);
         return result.ExitCode;
+    }
+
+    /// <summary>
+    /// Hotkey-eval form (provisional name: <c>render</c>). Runs the preprocessor
+    /// over the input text with a live evaluator, so every maash operator is
+    /// fully evaluated and the result is spliced in as a bash literal. The
+    /// printed text is ready-to-run bash (no maash eval wrappers remain).
+    /// </summary>
+    internal static int RenderRun(string? file, string[]? inline)
+    {
+        string text;
+        if (file != null)
+        {
+            if (!File.Exists(file)) { Console.Error.WriteLine("maash: no such file: " + file); return 2; }
+            text = File.ReadAllText(file);
+        }
+        else if (inline != null && inline.Length > 0)
+            text = string.Join(" ", inline);
+        else if (Console.IsInputRedirected)
+            text = ReadAllStdin();
+        else
+        {
+            Console.Error.WriteLine("maash: no input (use -f file, pipe stdin, or pass text)");
+            return 2;
+        }
+
+        // Same header semantics as 'preprocess': maactl directives before a
+        // '^---$'/'---' line are applied to the registry first, so 'render -f'
+        // works on full script files. A bare hotkey line has no header.
+        var (hdr, body) = SplitHeader(text);
+        var baseDir = file is not null ? Path.GetDirectoryName(Path.GetFullPath(file)) : Directory.GetCurrentDirectory();
+        var reg = StateBridge.LoadRegistry();
+        if (hdr.Count > 0)
+        {
+            foreach (var line in hdr)
+            {
+                var (_, warns) = Ctl.ApplyHeaderLine(reg, line, authoritativeUse: true, baseDir);
+                foreach (var w in warns) Console.Error.WriteLine("maash: " + w);
+            }
+            StateBridge.SaveRegistry(reg);
+        }
+
+        PreprocessResult result;
+        try
+        {
+            result = Preprocessor.Run(reg, body, (resolved, operand) => EvalForRender(reg, resolved, operand));
+        }
+        catch (MaashException ex)
+        {
+            Console.Error.WriteLine("maash: " + ex.Message);
+            return 1;
+        }
+        foreach (var w in result.Warnings) Console.Error.WriteLine(w);
+        Console.Out.Write(result.Text);
+        return 0;
+    }
+
+    /// <summary>Evaluator callback for render mode: invoke the module in-process (M1).</summary>
+    internal static string EvalForRender(ModuleRegistry reg, ResolvedOperator resolved, string operand)
+    {
+        if (!reg.TryGetModule(resolved.Alias, out var lm) || lm is null)
+            throw new MaashException($"Module '{resolved.Alias}' is not loaded.");
+        if (lm.Module.Interpreter == null)
+            throw new MaashException($"Module '{resolved.Alias}' has no interpreter configured.");
+        var ir = Invoker.Invoke(lm.Module, resolved.Definition, resolved.EvalArg, operand);
+        if (ir.ExitCode != 0)
+            throw new MaashException($"Module '{resolved.Alias}' exited {ir.ExitCode}.");
+        return ir.Output;
     }
 
     internal static int PreprocessRun(string? file, bool quiet, string[]? inline)

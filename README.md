@@ -60,9 +60,14 @@ lines of the script will be handled as maactl subcommands without the leading
 - `maash eval [maash-operator-suffix] [[argv]]` invokes a maash operator (given
   using the module infix and operator suffix) from the current `maactl` and
   returns the result to stdout.
-- `maash <something, name pending> [string]` a form of the preprocessor
-  specifically designed for the maash hotkey, where maash operations are fully
-  evaluated and the resulting bash is provided.
+- `maash render [-f|--file file-path] [text]` (provisional name, was "name
+  pending") a form of the preprocessor specifically designed for the maash
+  hotkey, where maash operations are fully evaluated and the resulting bash is
+  provided on stdout.  Like `preprocess`, it accepts a file, an inline text,
+  or (with no argument) stdin.  Operators are evaluated live and spliced in
+  as quoted literals instead of `maash eval` wrappers.  A `$( op )` with an
+  empty prefix collapses to just the literal; `$(cmd op ...)` keeps the
+  substitution and evaluates the operator inside it.
 - `maash init` intended to be run in the caller scope ie in their .bashrc, run
   with `eval "$(maash init)"`, handles creating the maactl alias and the @@
   function and any other in-bash customization needed.
@@ -77,6 +82,7 @@ lines of the script will be handled as maactl subcommands without the leading
     maash eval <op> [args...]       invoke one module operator (M1 protocol)
     maash ctl <verb> [args]         module registry (use/move/load/remove/clean)
     maash init                      print the bash hotkey snippet
+    maash render [-f FILE] [text]   hotkey-eval form: fully evaluate ops, emit bash (name provisional)
     maash help [topic] [-f FILE]    help for maash, a module, or an operator
     maash -- <script> [args]        POSIX passthrough; script + args reach bash directly
 
@@ -93,8 +99,10 @@ Module search dirs for `use <name>` (in order):
 
 A `-f <path>` header resolves relative to the script's dir first, then the CWD.
 
-The hotkey-eval form `maash <name-pending> [string]` is designed but not yet
-implemented; each `maash eval` is a fresh invocation (no cross-operator state).
+The hotkey-eval form is `maash render` (provisional name; the design above
+leaves it "name pending").  Like the eval-wrapper path, every operator
+invocation is a fresh interpreter process (no cross-operator state); render
+evaluates each operator live and splices the result in.
 
 ## maash modules
 

@@ -105,6 +105,96 @@ public class PreprocessorTests
     }
 }
 
+public class PreprocessorRenderTests
+{
+    // Fake live evaluator: '+' suffix upper-cases, bracketed '#' wraps in [],
+    // otherwise echoes. Mirrors the echo fixture module's dispatch.
+    static Func<ResolvedOperator, string, string> Eval() => (resolved, operand) =>
+    {
+        if (resolved.Definition.Bracketed) return "[" + operand + "]";
+        if (resolved.OperatorString.EndsWith('+')) return operand.ToUpperInvariant();
+        return operand;
+    };
+
+    static ModuleRegistry RenderReg()
+    {
+        var reg = new ModuleRegistry();
+        var mod = new MaashModule
+        {
+            Name = "echo",
+            Operators = new()
+            {
+                [""]  = new MaashOperatorDefinition { Description = "primary" },
+                ["+"] = new MaashOperatorDefinition { Description = "upper" },
+                ["#"] = new MaashOperatorDefinition { Description = "bracketed", Bracketed = true }
+            }
+        };
+        reg.Load(mod, "echo", "@@", primary: true, allowClobber: true);
+        return reg;
+    }
+
+    [Fact]
+    public void Render_Bare_Operator_Is_Spliced_As_Quoted_Literal()
+    {
+        var reg = RenderReg();
+        var r = Preprocessor.Run(reg, "echo @@+ x", Eval());
+        Assert.Equal("echo 'X'", r.Text);
+        Assert.DoesNotContain("maash eval", r.Text);
+    }
+
+    [Fact]
+    public void Render_Paren_Operator_With_Command_Prefix_Keeps_Substitution()
+    {
+        var reg = RenderReg();
+        var r = Preprocessor.Run(reg, "echo $(f @@+ x) more", Eval());
+        Assert.Equal("echo $(f 'X') more", r.Text);
+    }
+
+    [Fact]
+    public void Render_Paren_Operator_Alone_Collapses_To_Literal()
+    {
+        var reg = RenderReg();
+        var r = Preprocessor.Run(reg, "echo $(@@+ x) tail", Eval());
+        Assert.Equal("echo 'X' tail", r.Text);
+    }
+
+    [Fact]
+    public void Render_Paren_Bracketed_Operator_Alone_Collapses_To_Literal()
+    {
+        var reg = RenderReg();
+        var r = Preprocessor.Run(reg, "echo $( @@#[a b c]@@) end", Eval());
+        Assert.Equal("echo '[a b c]' end", r.Text);
+    }
+
+    [Fact]
+    public void Render_Multiple_Operators_Each_Evaluated()
+    {
+        var reg = RenderReg();
+        var r = Preprocessor.Run(reg, "a=$(f @@+ one) b=$(@@+ two)", Eval());
+        Assert.Equal("a=$(f 'ONE') b='TWO'", r.Text);
+    }
+
+    [Fact]
+    public void Render_Escaped_AtAt_Stays_Literal()
+    {
+        var reg = RenderReg();
+        var bs = "\\"; // single backslash
+        var r = Preprocessor.Run(reg, "echo " + bs + "@@ notop", Eval());
+        Assert.Equal("echo @@ notop", r.Text);
+    }
+
+    [Fact]
+    public void Render_Result_With_Single_Quote_Is_BashQuoted()
+    {
+        var reg = RenderReg();
+        var bs = "\\"; // single backslash
+        var splice = "'" + bs + "''"; // '\''
+        // Evaluator echoes; operand contains a single quote.
+        var r = Preprocessor.Run(reg, "x=$(@@ it's)", (resolved, op) => op);
+        Assert.Equal("x='it" + splice + "s'", r.Text);
+    }
+}
+
 public class ModuleRegistryTests
 {
     static MaashModule SingleOp() => new()

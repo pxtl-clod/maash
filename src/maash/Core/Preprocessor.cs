@@ -23,7 +23,7 @@ public sealed class ResolvedOperator
     public string EvalArg => "@@" + OperatorString;
 }
 
-public class MaashPreprocessorException : Exception
+public class MaashPreprocessorException : MaashException
 {
     public MaashPreprocessorException(string message) : base(message) { }
 }
@@ -93,7 +93,13 @@ public static class Preprocessor
     /// invocation with a bash command substitution
     /// <c>$(maash eval '@@OPT' operand)</c>.
     /// </summary>
-    public static PreprocessResult Run(ModuleRegistry modules, string text)
+    /// <param name="evaluate">Optional render-mode callback. When supplied, each
+    /// resolved operator is fully evaluated now (callback receives the resolved
+    /// operator and the trimmed operand and must return its result text) and the
+    /// result is spliced into the output as a bash single-quoted literal instead
+    /// of a <c>maash eval</c> wrapper. Used by <c>maash render</c> (hotkey-eval form).
+    /// </param>
+    public static PreprocessResult Run(ModuleRegistry modules, string text, Func<ResolvedOperator, string, string>? evaluate = null)
     {
         var warnings = new List<string>();
         var output = new StringBuilder(text.Length + 64);
@@ -101,6 +107,7 @@ public static class Preprocessor
 
         while (pos < text.Length)
         {
+            var outLenAtLoopTop = output.Length;
             var idx = FindOperator(text, pos);
             if (idx < 0)
             {
@@ -168,23 +175,63 @@ public static class Preprocessor
             // Convention: operators are invoked without leading whitespace.
             var t = operand.TrimStart();
 
-            // When the operator sits inside a user-provided $(), emit the maash eval
-            // invocation bare so it becomes the body of that $(), consuming the closer.
-            // When it is NOT inside $(), wrap the invocation in $( ) so the
-            // substitution result is captured inline in the bash output.
-            if (insideParen)
+            if (evaluate is not null)
             {
+                // Render mode: fully evaluate the op now and splice the result as a
+                // bash literal. No maash eval wrapper is emitted.
+                var result = evaluate(resolved, t);
+                if (insideParen)
+                {
+                    // If the user's $( ) wraps only the op (no command prefix),
+                    // drop the $( ) entirely and splice the literal value in its
+                    // place. Otherwise the result becomes the substitution body
+                    // and we re-emit the closer.
+                    // The enclosing opener is the nearest '$(' at or before the
+                    // operator start (insideParen guarantees its matching
+                    // closer exists, so the opener exists too).
+                    var dOpen = text.LastIndexOf("$(", idx, StringComparison.Ordinal);
+                    var prefixEmpty = dOpen >= pos && IsAllWhitespace(text, dOpen + 2, idx - (dOpen + 2));
+                    end = parenClose + 1;
+                    if (prefixEmpty)
+                    {
+                        // Truncate to just before the $( (accounting for any
+                        // unescaping in the chunk text that preceded it).
+                        var keepLen = Unescape(text, pos, dOpen - pos).Length;
+                        output.Length = outLenAtLoopTop + keepLen;
+                        output.Append(QuoteBash(result));
+                    }
+                    else
+                    {
+                        output.Append(QuoteBash(result));
+                        output.Append(")");
+                    }
+                }
+                else
+                {
+                    output.Append(QuoteBash(result));
+                }
+            }
+            else if (insideParen)
+            {
+                // When the operator sits inside a user-provided $(), emit the maash eval
+                // invocation bare so it becomes the body of that $(), consuming the closer.
                 end = parenClose + 1;    // consume the ) so bash sees $(maash eval … )
                 output.Append("maash eval ");
+                output.Append(QuoteBash("@@" + resolved.OperatorString));
+                output.Append(' ');
+                output.Append(QuoteBash(t));
+                output.Append(")");
             }
             else
             {
+                // When it is NOT inside $(), wrap the invocation in $( ) so the
+                // substitution result is captured inline in the bash output.
                 output.Append("$(maash eval ");
+                output.Append(QuoteBash("@@" + resolved.OperatorString));
+                output.Append(' ');
+                output.Append(QuoteBash(t));
+                output.Append(")");
             }
-            output.Append(QuoteBash("@@" + resolved.OperatorString));
-            output.Append(' ');
-            output.Append(QuoteBash(t));
-            output.Append(")");
 
             pos = end;
         }
@@ -245,6 +292,13 @@ public static class Preprocessor
             }
         }
         return outp.ToString();
+    }
+
+    static bool IsAllWhitespace(string s, int start, int length)
+    {
+        for (var i = start; i < start + length; i++)
+            if (!char.IsWhiteSpace(s[i])) return false;
+        return true;
     }
 
     /// <summary>

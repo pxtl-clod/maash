@@ -1,0 +1,6 @@
+use echo
+---
+one=$(@@+ hello one)
+two=$(echo f @@ two words)
+echo one=$one
+echo two=$two
