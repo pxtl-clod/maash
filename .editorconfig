@@ -1,0 +1,50 @@
+root = true
+
+[*]
+# Basic global settings
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+
+[*.{csproj,props,targets}]
+# msbuild/dotnet proj files
+indent_size = 2
+indent_style = space
+trim_trailing_whitespace =  true
+
+[*.cs]
+indent_size = 4
+indent_style = space
+trim_trailing_whitespace =  true
+
+# require braces on statement blocks
+dotnet_diagnostic.IDE0011.severity = error
+
+# unused variables
+dotnet_diagnostic.CS0168.severity = error
+dotnet_diagnostic.CS0219.severity = error
+
+# all style problems below are errors
+dotnet_diagnostic.IDE0055.severity = error
+ 
+# --- 1TBS Brace Layout ---
+# Keeps opening braces on the same line for control blocks, accessors, and lambdas
+csharp_new_line_before_open_brace = none
+
+# Puts else, catch, and finally on the same line as the closing brace
+csharp_new_line_before_else = false
+csharp_new_line_before_catch = false
+csharp_new_line_before_finally = false
+
+# --- Indentation & Spacing ---
+# Enforce standard C# spacing
+csharp_space_around_binary_operators = before_and_after
+csharp_space_between_parentheses = false
+csharp_space_before_colon_in_inheritance_clause = true
+csharp_space_after_colon_in_inheritance_clause = true
+csharp_space_around_collection_element_initializer = true
+
+# Enforce block body preferences over expression bodies
+csharp_style_expression_bodied_methods = false
+csharp_style_expression_bodied_constructors = false
+csharp_style_expression_bodied_properties = false

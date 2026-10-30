@@ -9,12 +9,10 @@
   },
   "operators": {
     "": {
-      "description": "Shout the operand (uppercase)",
-      "bracketed": false
+      "description": "Shout the operand (uppercase)"
     },
     "#": {
-      "description": "Shout twice",
-      "bracketed": false
+      "description": "Shout twice"
     }
   }
 }

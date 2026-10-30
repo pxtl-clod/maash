@@ -7,7 +7,7 @@ character, and reports the parsed character-length so the scanner resumes
 right after the consumed operand text.
 
 Dispatch:
-  op ending '+' or 'x'  -> UPPER (upper-cases the operand)
+  op ending '+'/'x'/'+['  -> UPPER (upper-cases the operand)
   otherwise             -> ECHO (returns operand as-is)
 
 The trailing '+' also distinguishes '@@+' (upper) from '@@' (echo) for the
@@ -51,7 +51,7 @@ def main():
     parsed_char_len = len(operand_bytes.decode("utf-8", "replace"))
     op_text = operand_bytes.decode("utf-8", "replace").lstrip(" ")
 
-    if op_str.endswith("+") or op_str.endswith("x"):
+    if op_str.endswith("+") or op_str.endswith("x") or op_str.endswith("+["):
         out = op_text.upper()
     else:
         out = op_text

@@ -7,8 +7,7 @@ namespace Maash.Core;
 /// operators (with a warning).
 /// </summary>
 /// <summary>A module loaded with its resolved identity (alias is the lookup key).</summary>
-public sealed record LoadedModule(MaashModule Module, string Alias, string Infix, bool Primary, bool SuppressAlnumRule)
-{
+public sealed record LoadedModule(MaashModule Module, string Alias, string Infix, bool IsPrimary, bool SuppressAlnumRule) {
     /// <summary>
     /// Whether this module's empty (primary) suffix may be a bare infix.
     /// Alphanumeric infixes force the "@" suffix on the primary operator
@@ -17,20 +16,22 @@ public sealed record LoadedModule(MaashModule Module, string Alias, string Infix
     public bool AllowEmptySuffix => SuppressAlnumRule || !IsAlnumInfix(Infix);
 
     /// <summary>An infix is alphanumeric when non-empty and every char is a letter or digit.</summary>
-    public static bool IsAlnumInfix(string? infix)
-    {
-        if (string.IsNullOrEmpty(infix)) return false;
-        foreach (var c in infix) if (!char.IsLetterOrDigit(c)) return false;
+    public static bool IsAlnumInfix(string? infix) {
+        if (string.IsNullOrEmpty(infix)) {
+            return false;
+        }
+
+        foreach (var c in infix) {
+            if (!char.IsLetterOrDigit(c)) {
+                return false;
+            }
+        }
+
         return true;
     }
 }
 
-public sealed class ModuleRegistry
-{
-    
-    /// <summary>A fully-resolved operator: the operator string following <c>@@</c>.</summary>
-    public sealed record LoadedOperator(
-        string OperatorString, string Alias, string Suffix, bool ShadowedByNonPrimary);
+public sealed class ModuleRegistry {
 
     /// <summary>Resolved operators, keyed by the full operator string after <c>@@</c>.</summary>
     public Dictionary<string, LoadedOperator> Operators { get; } = new(StringComparer.Ordinal);
@@ -46,49 +47,53 @@ public sealed class ModuleRegistry
     /// <summary>Restore a persisted inferred-primary alias (state round-trip; the alias must be a loaded module).</summary>
     public void RestoreInferredPrimary(string? alias) => _inferredPrimaryAlias = alias;
 
-    public bool TryGetModule(string alias, out LoadedModule? module)
-    {
+    public bool TryGetModule(string alias, out LoadedModule? module) {
         module = null;
         return _modules.TryGetValue(alias, out module);
     }
 
-    public string? PrimaryAlias
-    {
-        get
-        {
-            if (_inferredPrimaryAlias is not null && _modules.ContainsKey(_inferredPrimaryAlias))
+    public string? PrimaryAlias {
+        get {
+            if (_inferredPrimaryAlias is not null && _modules.ContainsKey(_inferredPrimaryAlias)) {
                 return _inferredPrimaryAlias;
-            foreach (var (alias, m) in _modules)
-                if (m.Primary) return alias;
+            }
+
+            foreach (var (alias, m) in _modules) {
+                if (m.IsPrimary) {
+                    return alias;
+                }
+            }
+
             return null;
         }
     }
 
     /// <param name="inferPrimary">Whether the first non-primary load should be inferred primary. State rebuilds pass false to avoid re-firing the ambiguity WARN.</param>
     public List<string> Load(MaashModule module, string? alias, string? infix, bool primary,
-        bool allowClobber = false, bool suppressAlnumRule = false, bool inferPrimary = true)
-    {
+        bool allowClobber = false, bool suppressAlnumRule = false, bool inferPrimary = true) {
         var warnings = new List<string>();
         var name = string.IsNullOrEmpty(alias) ? module.Name : alias;
 
-        if (_modules.ContainsKey(name))
+        if (_modules.ContainsKey(name)) {
             throw new InvalidOperationException($"Module alias '{name}' is already loaded.");
+        }
 
         var isFirst = !_modules.Any();
-        if (isFirst && !primary && inferPrimary)
+        if (isFirst && !primary && inferPrimary) {
             _inferredPrimaryAlias = name;
+        }
 
         // A second non-primary load makes the inferred primary ambiguous: WARN and drop the flag.
-        if (!isFirst && !primary && inferPrimary && _inferredPrimaryAlias is not null && _inferredPrimaryAlias != name)
-        {
+        if (!isFirst && !primary && inferPrimary && _inferredPrimaryAlias is not null && _inferredPrimaryAlias != name) {
             warnings.Add($"WARN: primary is ambiguous (module '{name}' loaded after '{_inferredPrimaryAlias}'); primary flag removed from '{_inferredPrimaryAlias}'.");
             _inferredPrimaryAlias = null;
         }
 
-        _modules[name] = new LoadedModule(module, name, infix ?? module.Name, primary, suppressAlnumRule);
+        // Infix precedence: explicit -x/--infix > module defaultInfix > module name.
+        var effectiveInfix = infix ?? module.DefaultInfix ?? module.Name;
+        _modules[name] = new LoadedModule(module, name, effectiveInfix, primary, suppressAlnumRule);
 
-        if (primary && _inferredPrimaryAlias is not null && _inferredPrimaryAlias != name)
-        {
+        if (primary && _inferredPrimaryAlias is not null && _inferredPrimaryAlias != name) {
             warnings.Add($"WARN: module '{_inferredPrimaryAlias}' was inferred primary; module '{name}' is now primary.");
             _inferredPrimaryAlias = null;
         }
@@ -106,67 +111,61 @@ public sealed class ModuleRegistry
     /// Yields (originalSuffix, operatorStringAfterAtAt).
     /// </summary>
     public static IEnumerable<(string, string)> BuildOperatorStrings(MaashModule module, string infix,
-        bool isPrimary = false, bool allowEmptySuffix = true)
-    {
-        foreach (var (suffix, _) in module.Operators)
-        {
+        bool isPrimary = false, bool allowEmptySuffix = true) {
+        foreach (var (suffix, _) in module.Operators) {
             var effective = (suffix.Length == 0 && !allowEmptySuffix) ? "@" : suffix;
-            if (isPrimary)
-            {
+            if (isPrimary) {
                 yield return (suffix, suffix); // unprefixed: @@<suffix>
-                if (infix.Length > 0)
+                if (infix.Length > 0) {
                     yield return (suffix, infix + effective); // also reachable on the infix
-            }
-            else
-            {
+                }
+            } else {
                 yield return (suffix, infix + effective);
             }
         }
     }
 
-    public List<string> Move(string alias, string? newInfix, bool? primary)
-    {
+    public List<string> Move(string alias, string? newInfix, bool? primary) {
         var warnings = new List<string>();
-        if (!_modules.TryGetValue(alias, out var loaded))
+        if (!_modules.TryGetValue(alias, out var loaded)) {
             throw new InvalidOperationException($"Module alias '{alias}' is not loaded.");
-
-        if (primary is false && _inferredPrimaryAlias == alias)
-            _inferredPrimaryAlias = null;
-
-        if (primary is true)
-        {
-            if (_inferredPrimaryAlias is not null && _inferredPrimaryAlias != alias)
-            {
-                warnings.Add($"WARN: module '{_inferredPrimaryAlias}' was inferred primary; module '{alias}' is now primary.");
-                _inferredPrimaryAlias = null;
-            }
-            else if (_inferredPrimaryAlias == alias)
-                _inferredPrimaryAlias = null; // explicit -p replaces inference
         }
 
-        _modules[alias] = loaded with { Infix = newInfix ?? loaded.Infix, Primary = primary ?? loaded.Primary };
+        if (primary is false && _inferredPrimaryAlias == alias) {
+            _inferredPrimaryAlias = null;
+        }
+
+        if (primary is true) {
+            if (_inferredPrimaryAlias is not null && _inferredPrimaryAlias != alias) {
+                warnings.Add($"WARN: module '{_inferredPrimaryAlias}' was inferred primary; module '{alias}' is now primary.");
+                _inferredPrimaryAlias = null;
+            } else if (_inferredPrimaryAlias == alias) {
+                _inferredPrimaryAlias = null; // explicit -p replaces inference
+            }
+        }
+
+        _modules[alias] = loaded with { Infix = newInfix ?? loaded.Infix, IsPrimary = primary ?? loaded.IsPrimary };
         Reindex(warnings, allowClobber: true);
         return warnings;
     }
 
-    public bool Remove(string alias)
-    {
+    public bool Remove(string alias) {
         var removed = _modules.Remove(alias);
-        if (_inferredPrimaryAlias == alias)
+        if (_inferredPrimaryAlias == alias) {
             _inferredPrimaryAlias = null;
+        }
+
         Reindex(allowClobber: true);
         return removed;
     }
 
-    public void Clean()
-    {
+    public void Clean() {
         _modules.Clear();
         _inferredPrimaryAlias = null;
         Reindex(allowClobber: true);
     }
 
-    private void Reindex(List<string>? warnings = null, bool allowClobber = false)
-    {
+    private void Reindex(List<string>? warnings = null, bool allowClobber = false) {
         Operators.Clear();
 
         var primaryAlias = PrimaryAlias;
@@ -175,32 +174,27 @@ public sealed class ModuleRegistry
             .OrderBy(m => m.Alias == primaryAlias ? 0 : 1)
             .ToList();
 
-        foreach (var loaded in ordered)
-        {
-            foreach (var (suffix, opString) in BuildOperatorStrings(loaded.Module, loaded.Infix, loaded.Alias == primaryAlias, loaded.AllowEmptySuffix))
-            {
+        foreach (var loaded in ordered) {
+            foreach (var (suffix, opString) in BuildOperatorStrings(loaded.Module, loaded.Infix, loaded.Alias == primaryAlias, loaded.AllowEmptySuffix)) {
                 bool collisionWarned = false;
-                if (Operators.TryGetValue(opString, out var existing) && existing.Alias != loaded.Alias)
-                {
+                if (Operators.TryGetValue(opString, out var existing) && existing.Alias != loaded.Alias) {
                     bool meIsPrimary = primaryAlias == loaded.Alias;
                     bool existingIsPrimary = primaryAlias == existing.Alias;
 
-                    if (!meIsPrimary && !existingIsPrimary)
-                    {
-                        if (!allowClobber)
+                    if (!meIsPrimary && !existingIsPrimary) {
+                        if (!allowClobber) {
                             throw new InvalidOperationException(
                                 $"Operator '@@{opString}' is already registered by module '{existing.Alias}' (collision with '{loaded.Alias}').");
+                        }
+
                         warnings?.Add($"WARN: operator '@@{opString}' clobbered by module '{loaded.Alias}'. Use an --infix to disambiguate.");
-                    }
-                    else
-                    {
+                    } else {
                         warnings?.Add($"WARN: operator '@@{opString}' registered by non-primary module '{loaded.Alias}' shadows the primary registration.");
                     }
                     collisionWarned = true;
                 }
 
-                var shadowed = collisionWarned;
-                Operators[opString] = new LoadedOperator(opString, loaded.Alias, suffix, shadowed);
+                Operators[opString] = new LoadedOperator(opString, loaded.Alias, suffix, collisionWarned);
             }
         }
     }

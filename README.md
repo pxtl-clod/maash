@@ -97,7 +97,7 @@ Module search dirs for `use <name>` (in order):
 3. `/usr/local/share/maash`
 4. `~/.local/share/maash`
 
-A `-f <path>` header resolves relative to the script's dir first, then the CWD.
+A `-f <path>` header resolves relative to the CWD first, then the script's dir.
 
 The hotkey-eval form is `maash render` (provisional name; the design above
 leaves it "name pending").  Like the eval-wrapper path, every operator
@@ -210,6 +210,11 @@ Or in bracketed mode
 ```
 @@#["hello, world".ToUpper()]@@
 ```
+A bracketed operator's suffix ends with `[`, which is the implicit
+open-bracket of its operand; the operand runs to the `]@@` terminator.  In
+the example above the operator is `#[` (infix `#` plus the bracketed suffix
+`[`), so the operand is `"hello, world".ToUpper()`, the text between the
+implicit `[` and the `]@@`.
 
 A module can register multiple operators.  By convention, braced mode can be
 provided by a module `@@#{var myVar = "hello, world"; return myvar;}` - it might

@@ -55,4 +55,7 @@ CodeCoverage/
 *.VisualState.xml
 TestResult.xml
 nunit-*.xml
+
+# LLM scratch space
+temp/
 MEMORY.md

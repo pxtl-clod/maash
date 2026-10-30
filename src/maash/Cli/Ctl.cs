@@ -13,22 +13,7 @@ using Maash.State;
 /// selection, and persistence. Same subcommands work in script headers (before
 /// the ^---$ break) without the "ctl" prefix.
 /// </summary>
-public static class Ctl
-{
-    /// <summary>A directive parsed from one maactl line in a script header.</summary>
-    public sealed class HeaderDirective
-    {
-        public string Verb = "";
-        public string? Name;
-        public string? Alias;
-        public string? Infix;
-        public bool Primary;
-        public bool AllowClobber;
-        public bool SuppressAlnumRule;
-        public bool IsFile;
-        public bool NameAliasPending;
-    }
-
+public static class Ctl {
     /// <summary>Verbs recognized as maactl subcommands (for header/body detection).</summary>
     public static readonly string[] Verbs = { "use", "move", "load", "remove", "clean", "help" };
 
@@ -37,16 +22,12 @@ public static class Ctl
     /// misuse: body maactl lines are only honored in the @@/maash eval context,
     /// never by the preprocessor).
     /// </summary>
-    public static List<string> BodyMaactlWarnings(string body)
-    {
+    public static List<string> BodyMaactlWarnings(string body) {
         var warnings = new List<string>();
-        foreach (var raw in body.Split('\n'))
-        {
+        foreach (var raw in body.Split('\n')) {
             var t = raw.TrimEnd('\r').TrimStart();
-            foreach (var verb in Verbs)
-            {
-                if (t == verb || t.StartsWith(verb + " "))
-                {
+            foreach (var verb in Verbs) {
+                if (t == verb || t.StartsWith(verb + " ")) {
                     warnings.Add($"WARN: maactl subcommand '{verb}' in script body; only honored in the @@/maash eval context, not by the preprocessor.");
                     break;
                 }
@@ -55,8 +36,7 @@ public static class Ctl
         return warnings;
     }
 
-    public static Command BuildCommand()
-    {
+    public static Command BuildCommand() {
         var ctl = new Command("ctl", "Manage maash modules and state (alias: maactl).");
 
         var f = FileOpt();
@@ -70,8 +50,11 @@ public static class Ctl
         // use [module] -f|--file, -i|--inline, -a|--alias, -x|--infix, -p|--primary, --allowclobber, --suppress-alnum-rule
         var useCmd = new Command("use", "Load a module by name (search dirs), file, or inline JSON.");
         var moduleArg = new Argument<string?>("module") { Arity = ArgumentArity.ZeroOrOne, Description = "Module name (path relative to a module search dir); or use -f/-i. Use '-' for the primary position." };
-        useCmd.Add((Argument) moduleArg);
-        foreach (var o in new Option[] { f, i, a, x, p, ac, sar, QuietOpt() }) useCmd.Add(o);
+        useCmd.Add((Argument)moduleArg);
+        foreach (var o in new Option[] { f, i, a, x, p, ac, sar, QuietOpt() }) {
+            useCmd.Add(o);
+        }
+
         useCmd.SetAction(pr => RunUse(pr, pr.GetValue<string?>(moduleArg), f, i, a, x, p, ac, sar));
         ctl.Add(useCmd);
 
@@ -79,15 +62,21 @@ public static class Ctl
         var moveCmd = new Command("move", "Move an existing module to a new alias/infix/primary.");
         var moveModuleArg = new Argument<string>("module") { Description = "Existing module alias." };
         moveCmd.Add(moveModuleArg);
-        foreach (var o in new Option[] { a, x, p, sar }) moveCmd.Add(o);
+        foreach (var o in new Option[] { a, x, p, sar }) {
+            moveCmd.Add(o);
+        }
+
         moveCmd.SetAction(pr => RunMove(pr.GetRequiredValue<string>(moveModuleArg), pr, a, x, p, sar));
         ctl.Add(moveCmd);
 
         // load [file-path] - alias of use -f
         var loadCmd = new Command("load", "Load a module file (alias of 'use -f').");
         var loadFileArg = new Argument<string>("file") { Description = "Path to a module JSON file. Use '-' for the primary position." };
-        loadCmd.Add((Argument) loadFileArg);
-        foreach (var o in new Option[] { a, x, p, ac, sar }) loadCmd.Add(o);
+        loadCmd.Add((Argument)loadFileArg);
+        foreach (var o in new Option[] { a, x, p, ac, sar }) {
+            loadCmd.Add(o);
+        }
+
         loadCmd.SetAction(pr => UseRun(pr, pr.GetRequiredValue<string>(loadFileArg), null, a, x, p, ac, sar, asFile: true));
         ctl.Add(loadCmd);
 
@@ -97,18 +86,19 @@ public static class Ctl
         removeCmd.Add(removeAliasArg);
         var rmQuiet = new Option<bool>("-q", "--quiet");
         removeCmd.Add(rmQuiet);
-        removeCmd.SetAction(pr =>
-        {
+        removeCmd.SetAction(pr => {
             var alias = pr.GetRequiredValue<string>(removeAliasArg);
             var reg = StateBridge.LoadRegistry();
-            if (!reg.TryGetModule(alias, out _))
-            {
+            if (!reg.TryGetModule(alias, out _)) {
                 Console.Error.WriteLine("maash: no module with alias '" + alias + "'");
                 return 1;
             }
             reg.Remove(alias);
             StateBridge.SaveRegistry(reg);
-            if (pr.GetValue(rmQuiet)) return 0;
+            if (pr.GetValue(rmQuiet)) {
+                return 0;
+            }
+
             Console.WriteLine("removed: " + alias);
             return 0;
         });
@@ -118,10 +108,12 @@ public static class Ctl
         var cleanCmd = new Command("clean", "Remove all imported modules.");
         var cleanQuiet = new Option<bool>("-q", "--quiet");
         cleanCmd.Add(cleanQuiet);
-        cleanCmd.SetAction(pr =>
-        {
+        cleanCmd.SetAction(pr => {
             StateBridge.SaveRegistry(new ModuleRegistry());
-            if (pr.GetValue(cleanQuiet)) return 0;
+            if (pr.GetValue(cleanQuiet)) {
+                return 0;
+            }
+
             Console.WriteLine("state cleaned");
             return 0;
         });
@@ -133,10 +125,12 @@ public static class Ctl
         helpCmd.Add(helpTopicArg);
         var hf = new Option<string?>("-f", "--file") { DefaultValueFactory = _ => (string?)null };
         helpCmd.Add(hf);
-        helpCmd.SetAction(pr =>
-        {
+        helpCmd.SetAction(pr => {
             var f2 = pr.GetValue<string?>(hf);
-            if (f2 != null) return Program.HelpRunFile(f2);
+            if (f2 != null) {
+                return Program.HelpRunFile(f2);
+            }
+
             return Program.HelpRun(pr.GetValue<string?>(helpTopicArg));
         });
         ctl.Add(helpCmd);
@@ -162,10 +156,8 @@ public static class Ctl
 
     internal static int UseRun(ParseResult pr, string? nameArg, string? fileArg,
         Option<string?> aOpt, Option<string?> xOpt, Option<bool> pOpt, Option<bool> acOpt, Option<bool> sarOpt,
-        bool asFile = false, string? inline = null)
-    {
-        try
-        {
+        bool asFile = false, string? inline = null) {
+        try {
             var alias = pr.GetValue(aOpt);
             var infix = pr.GetValue(xOpt);
             var primary = pr.GetValue(pOpt);
@@ -174,14 +166,16 @@ public static class Ctl
 
             MaashModule module;
             string declared;
-            if (inline is not null)
+            if (inline is not null) {
                 (module, declared) = LoadInline(inline, asFile ? nameArg : alias);
-            else if (fileArg != null)
+            } else if (fileArg != null) {
                 (module, declared) = ModuleSource.LoadFromFile(fileArg);
-            else
-            {
+            } else {
                 var byName = asFile ? (fileArg ?? nameArg) : (nameArg ?? fileArg);
-                if (byName is null) throw new MaashException("module name, -f file, or -i inline required");
+                if (byName is null) {
+                    throw new MaashException("module name, -f file, or -i inline required");
+                }
+
                 (module, declared) = LoadByNameOrPath(byName);
             }
 
@@ -189,21 +183,20 @@ public static class Ctl
             var reg = StateBridge.LoadRegistry();
             var warns = reg.Load(module, usedAlias, infix, primary, allowClobber: allowClobber, suppressAlnumRule: suppressAlnum);
             StateBridge.SaveRegistry(reg);
-            foreach (var w in warns) Console.Error.WriteLine("maash: " + w);
-            Console.WriteLine("loaded: " + usedAlias + "  (infix '" + (infix ?? declared) + "')");
+            foreach (var w in warns) {
+                Console.Error.WriteLine("maash: " + w);
+            }
+
+            var actualInfix = reg.TryGetModule(usedAlias, out var lm) && lm is not null ? lm.Infix : (infix ?? declared);
+            Console.WriteLine("loaded: " + usedAlias + "  (infix '" + actualInfix + "')");
             return 0;
-        }
-        catch (MaashException ex) { Console.Error.WriteLine("maash: " + ex.Message); return 1; }
-        catch (InvalidOperationException ex) { Console.Error.WriteLine("maash: " + ex.Message); return 1; }
+        } catch (MaashException ex) { Console.Error.WriteLine("maash: " + ex.Message); return 1; } catch (InvalidOperationException ex) { Console.Error.WriteLine("maash: " + ex.Message); return 1; }
     }
 
-    static int RunMove(string alias, ParseResult pr, Option<string?> aOpt, Option<string?> xOpt, Option<bool> pOpt, Option<bool> sarOpt)
-    {
-        try
-        {
+    static int RunMove(string alias, ParseResult pr, Option<string?> aOpt, Option<string?> xOpt, Option<bool> pOpt, Option<bool> sarOpt) {
+        try {
             var reg = StateBridge.LoadRegistry();
-            if (!reg.TryGetModule(alias, out var lm) || lm is null)
-            {
+            if (!reg.TryGetModule(alias, out var lm) || lm is null) {
                 Console.Error.WriteLine("maash: no module with alias '" + alias + "'");
                 return 1;
             }
@@ -211,27 +204,21 @@ public static class Ctl
             var newInfix = pr.GetValue(xOpt);
             var newPrimary = pr.GetValue(pOpt);
 
-            if (newAlias != null && newAlias != alias)
-            {
-                if (reg.Modules.Any(m => m.Alias == newAlias))
-                {
+            if (newAlias != null && newAlias != alias) {
+                if (reg.Modules.Any(m => m.Alias == newAlias)) {
                     Console.Error.WriteLine("maash: alias '" + newAlias + "' is already in use");
                     return 1;
                 }
                 reg.Remove(alias);
                 reg.Load(lm.Module, newAlias, newInfix ?? lm.Infix, newPrimary, suppressAlnumRule: lm.SuppressAlnumRule);
-            }
-            else
-            {
+            } else {
                 reg.Move(alias, newInfix, primary: newPrimary ? (bool?)true : null);
             }
 
             StateBridge.SaveRegistry(reg);
             Console.WriteLine("moved: " + (newAlias ?? alias));
             return 0;
-        }
-        catch (MaashException ex) { Console.Error.WriteLine("maash: " + ex.Message); return 1; }
-        catch (InvalidOperationException ex) { Console.Error.WriteLine("maash: " + ex.Message); return 1; }
+        } catch (MaashException ex) { Console.Error.WriteLine("maash: " + ex.Message); return 1; } catch (InvalidOperationException ex) { Console.Error.WriteLine("maash: " + ex.Message); return 1; }
     }
 
     // ---------- module loading ----------
@@ -239,140 +226,161 @@ public static class Ctl
     static (MaashModule, string) LoadByNameOrPath(string nameOrPath)
         => LoadModulePath(nameOrPath, null);
 
-    static (MaashModule, string) LoadModulePath(string nameOrPath, string? baseDir)
-    {
+    static (MaashModule, string) LoadModulePath(string nameOrPath, string? baseDir) {
         var path = ResolveModulePath(nameOrPath, baseDir);
-        if (path.EndsWith(".json") || File.Exists(path))
+        if (path.EndsWith(".json") || File.Exists(path)) {
             return ModuleSource.LoadFromFile(path);
+        }
+
         var found = ModuleSource.FindByName(nameOrPath);
-        if (found != null) return ModuleSource.LoadFromFile(found);
+        if (found != null) {
+            return ModuleSource.LoadFromFile(found);
+        }
+
         throw new MaashException("module not found: " + nameOrPath + " (search dirs: " + string.Join(":", ModuleSource.SearchDirs) + ")");
     }
 
-    static (MaashModule, string) LoadInline(string json, string? declaredName)
-    {
+    static (MaashModule, string) LoadInline(string json, string? declaredName) {
         var module = System.Text.Json.JsonSerializer.Deserialize<MaashModule>(json, MaashJsonContext.Default.MaashModule)
             ?? throw new MaashException("invalid inline module JSON");
         var name = !string.IsNullOrEmpty(declaredName) ? declaredName : module.Name;
-        if (string.IsNullOrEmpty(name)) throw new MaashException("inline module must specify a name or an alias");
+        if (string.IsNullOrEmpty(name)) {
+            throw new MaashException("inline module must specify a name or an alias");
+        }
+
         return (module, name);
     }
 
     // ---------- script header support ----------
 
     /// <summary>
-    /// Resolve a module path from a script header/CLI relative to the script's
-    /// directory (so scripts are portable), falling back to the CWD-relative
-    /// interpretation when no base dir is available.
+    /// Resolve a module path given with a relative -f/--file: CWD-relative first
+    /// (the user's shell convention), falling back to the script's directory
+    /// (so scripts can stay portable when the file is not in the CWD).
     /// </summary>
-    internal static string ResolveModulePath(string path, string? baseDir)
-    {
-        if (path.StartsWith("-")) return path;
-        // Try baseDir-relative (script-portable) first, then CWD-relative.
-        if (!string.IsNullOrEmpty(baseDir) && !Path.IsPathRooted(path))
-        {
-            var combined = Path.Combine(baseDir, path);
-            if (File.Exists(combined)) return combined;
+    internal static string ResolveModulePath(string path, string? baseDir) {
+        if (path.StartsWith("-")) {
+            return path;
         }
-        if (Path.IsPathRooted(path)) return path;
-        if (File.Exists(path)) return path;
+
+        if (Path.IsPathRooted(path)) {
+            return path;
+        }
+        // CWD-relative first.
+        if (File.Exists(path)) {
+            return path;
+        }
+        // Then script-dir-relative (portability fallback).
+        if (!string.IsNullOrEmpty(baseDir)) {
+            var combined = Path.Combine(baseDir, path);
+            if (File.Exists(combined)) {
+                return combined;
+            }
+        }
         return path;
     }
 
-    public static (HeaderDirective Directive, List<string> Warnings) ApplyHeaderLine(ModuleRegistry reg, string line, bool authoritativeUse = false, string? baseDir = null)
-    {
+    public static (HeaderDirective Directive, List<string> Warnings) ApplyHeaderLine(ModuleRegistry reg, string line, bool authoritativeUse = false, string? baseDir = null) {
         var warns = new List<string>();
         var d = new HeaderDirective();
         var fields = line.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        if (fields.Length == 0) return (d, warns);
+        if (fields.Length == 0) {
+            return (d, warns);
+        }
 
         d.Verb = fields[0];
         var pos = 1;
-        while (pos < fields.Length)
-        {
+        while (pos < fields.Length) {
             var tok = fields[pos];
-            if (!tok.StartsWith("-"))
-            {
+            if (!tok.StartsWith("-")) {
                 // Positional: first one is the module name; a second is an alias
                 // (useful with -f where the name is derived from the file).
-                if (d.Name == null) d.Name = tok;
-                else if (d.Alias == null) d.Alias = tok;
+                if (d.Name == null) {
+                    d.Name = tok;
+                } else if (d.Alias == null) {
+                    d.Alias = tok;
+                }
+
                 pos++;
                 continue;
             }
             string val = "";
             bool hasVal = pos + 1 < fields.Length && !fields[pos + 1].StartsWith("-");
-            if (hasVal) { val = fields[pos + 1]; pos += 2; } else pos++;
+            if (hasVal) { val = fields[pos + 1]; pos += 2; } else {
+                pos++;
+            }
 
-            switch (tok)
-            {
-                case "-p": case "--primary": d.Primary = true; break;
+            switch (tok) {
+                case "-p": case "--primary": d.IsPrimary = true; break;
                 case "--allowclobber": d.AllowClobber = true; break;
                 case "--suppress-alnum-rule": d.SuppressAlnumRule = true; break;
                 case "-a": case "--alias": d.Alias = val; break;
                 case "-x": case "--infix": d.Infix = val; break;
                 case "-q": case "--quiet": break;
-                case "-f": case "--file":
+                case "-f":
+                case "--file":
                     d.IsFile = true;
-                    if (d.Name != null && d.Alias == null && d.Name != val && val != "")
+                    if (d.Name != null && d.Alias == null && d.Name != val && val != "") {
                         d.Alias = d.Name; // 'use <name> -f <file>': name becomes the alias
-                    if (val != "") d.Name = val;
+                    }
+
+                    if (val != "") {
+                        d.Name = val;
+                    }
+
                     break;
-                case "-i": case "--inline":
+                case "-i":
+                case "--inline":
                     // Inline JSON in a header is not supported (use a file or search-dir module).
                     break;
             }
         }
 
-        switch (d.Verb)
-        {
+        switch (d.Verb) {
             case "use":
             case "load":
-                if (d.Name == null)
-                {
+                if (d.Name == null) {
                     warns.Add("maactl: 'use'/'load' requires a module name or -f/--file value.");
                     break;
                 }
-        var (mod, _) = LoadModulePath(d.Name!, baseDir);
+                var (mod, _) = LoadModulePath(d.Name!, baseDir);
                 var alias = d.Alias ?? d.Name;
                 // In a script header a 'use' for an already-loaded alias is re-entrant:
                 // the header is the authoritative declaration, so clobber the prior load.
-                if (authoritativeUse && reg.TryGetModule(alias, out _))
+                if (authoritativeUse && reg.TryGetModule(alias, out _)) {
                     reg.Remove(alias);
+                }
+
                 if (authoritativeUse && d.IsFile && d.Name is not null && d.Name.Contains("/") &&
-                    reg.TryGetModule(System.IO.Path.GetFileNameWithoutExtension(d.Name), out var legacy))
+                    reg.TryGetModule(System.IO.Path.GetFileNameWithoutExtension(d.Name), out var legacy)) {
                     reg.Remove(legacy!.Alias); // alias derived from the file path in a prior load
-                var loadWarns = reg.Load(mod, alias, d.Infix, d.Primary,
+                }
+
+                var loadWarns = reg.Load(mod, alias, d.Infix, d.IsPrimary,
                     allowClobber: d.AllowClobber, suppressAlnumRule: d.SuppressAlnumRule);
                 warns.AddRange(loadWarns);
                 break;
             case "move":
                 // 'move <existing-alias> [-a new-alias] [-x infix] [-p]' - mirrors
                 // RunMove: positional is the existing alias; -a renames.
-                if (d.Name == null)
-                {
+                if (d.Name == null) {
                     warns.Add("maactl: 'move' requires an existing module alias.");
                     break;
                 }
-                if (!reg.TryGetModule(d.Name, out var lm) || lm is null)
-                {
+                if (!reg.TryGetModule(d.Name, out var lm) || lm is null) {
                     warns.Add("maactl: no module with alias '" + d.Name + "'.");
                     break;
                 }
-                if (d.Alias != null && d.Alias != d.Name)
-                {
-                    if (reg.TryGetModule(d.Alias, out _))
-                    {
+                if (d.Alias != null && d.Alias != d.Name) {
+                    if (reg.TryGetModule(d.Alias, out _)) {
                         warns.Add("maactl: alias '" + d.Alias + "' is already in use.");
                         break;
                     }
                     reg.Remove(d.Name);
-                    warns.AddRange(reg.Load(lm.Module, d.Alias, d.Infix ?? lm.Infix, d.Primary,
+                    warns.AddRange(reg.Load(lm.Module, d.Alias, d.Infix ?? lm.Infix, d.IsPrimary,
                         suppressAlnumRule: lm.SuppressAlnumRule));
-                }
-                else
-                {
-                    warns.AddRange(reg.Move(d.Name, d.Infix, primary: d.Primary ? (bool?)true : null));
+                } else {
+                    warns.AddRange(reg.Move(d.Name, d.Infix, primary: d.IsPrimary ? (bool?)true : null));
                 }
                 break;
             case "remove":

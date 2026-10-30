@@ -6,8 +6,7 @@ using System.Text.Json.Serialization;
 /// <summary>
 /// Parsed module definition (JSON schema from README §"Module JSON").
 /// </summary>
-public sealed record MaashModule
-{
+public sealed record MaashModule {
     private const string Version = "v1";
 
     [JsonPropertyName("version")]
@@ -25,6 +24,14 @@ public sealed record MaashModule
     [JsonPropertyName("description")]
     public string? Description { get; init; }
 
+    /// <summary>
+    /// Default infix for operators when the user does not pass one (-x/--infix).
+    /// An empty string is meaningful: it registers operators with no infix
+    /// (e.g. `@@+` instead of `@@echo+`). Falls back to the module name when unset.
+    /// </summary>
+    [JsonPropertyName("defaultInfix")]
+    public string? DefaultInfix { get; init; }
+
     [JsonPropertyName("operators")]
     public Dictionary<string, MaashOperatorDefinition> Operators { get; init; } = new();
 
@@ -38,8 +45,7 @@ public sealed record MaashModule
 }
 
 /// <summary>How to spawn the persistent interpreter process for a module.</summary>
-public sealed record MaashInterpreter
-{
+public sealed record MaashInterpreter {
     [JsonPropertyName("command")]
     public string? Command { get; init; }
 
@@ -50,12 +56,12 @@ public sealed record MaashInterpreter
     public bool? RelativePaths { get; init; }
 }
 
-/// <summary>A single operator within a module.</summary>
-public sealed record MaashOperatorDefinition
-{
+/// <summary>
+/// A single operator within a module. Bracketed operators are those whose
+/// suffix ends with `[` — the `[` is the implicit open bracket of the operand
+/// (see README), e.g. suffixes `[` and `+[`.
+/// </summary>
+public sealed record MaashOperatorDefinition {
     [JsonPropertyName("description")]
     public string Description { get; init; } = string.Empty;
-
-    [JsonPropertyName("bracketed")]
-    public bool Bracketed { get; init; }
 }

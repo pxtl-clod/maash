@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/maash/maash.csproj" Id="11111111-1111-1111-1111-111111111111" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/maash.Tests/maash.Tests.csproj" Id="6f9f607b-4293-451f-8272-88637c8770b0" />
+  </Folder>
+</Solution>

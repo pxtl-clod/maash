@@ -4,40 +4,41 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Maash.Core;
 
 /// <summary>A loaded module entry: module definition + resolved identity (alias/infix/primary).</summary>
-public class LoadedModuleEntry
-{
+public class LoadedModuleEntry {
     public MaashModule Module { get; set; } = new();
     public string Alias { get; set; } = "";
     public string Infix { get; set; } = "";
-    public bool Primary { get; set; }
+    /// <summary>True when this module is (or was loaded as) the primary module.</summary>
+    [JsonPropertyName("primary")]
+    public bool IsPrimary { get; set; }
 }
 
 /// <summary>The persisted session state: which modules are loaded + their identity.</summary>
-public class MaashRegistryState
-{
+public class MaashRegistryState {
     public string? PrimaryAlias { get; set; }
     public bool PrimaryInferred { get; set; }
     public List<LoadedModuleEntry> Modules { get; set; } = new();
 }
 
-public static class MaashStateStore
-{
+public static class MaashStateStore {
     static string StatePath => StateDir.StateFile;
 
-    public static MaashRegistryState Load()
-    {
+    public static MaashRegistryState Load() {
         var p = StatePath;
-        if (!File.Exists(p)) return new MaashRegistryState();
+        if (!File.Exists(p)) {
+            return new MaashRegistryState();
+        }
+
         var json = File.ReadAllText(p);
         var s = JsonSerializer.Deserialize(json, MaashJsonContext.Default.MaashRegistryState);
         return s ?? new MaashRegistryState();
     }
 
-    public static void Save(MaashRegistryState state)
-    {
+    public static void Save(MaashRegistryState state) {
         var p = StatePath;
         var json = JsonSerializer.Serialize(state, MaashJsonContext.Default.MaashRegistryState);
         File.WriteAllText(p, json);
@@ -47,34 +48,36 @@ public static class MaashStateStore
 }
 
 /// <summary>Bridges the persisted state model to/from the runtime <see cref="ModuleRegistry"/>.</summary>
-public static class StateBridge
-{
+public static class StateBridge {
     /// <summary>Rebuild a runtime registry from persisted state (collisions already reconciled at load time).</summary>
-    public static ModuleRegistry BuildRegistry(MaashRegistryState state)
-    {
+    public static ModuleRegistry BuildRegistry(MaashRegistryState state) {
         var reg = new ModuleRegistry();
-        foreach (var e in state.Modules)
-        {
-            if (string.IsNullOrEmpty(e.Alias)) continue;
-            reg.Load(e.Module, e.Alias, e.Infix, e.Primary, allowClobber: true, inferPrimary: false);
+        foreach (var e in state.Modules) {
+            if (string.IsNullOrEmpty(e.Alias)) {
+                continue;
+            }
+
+            reg.Load(e.Module, e.Alias, e.Infix, e.IsPrimary, allowClobber: true, inferPrimary: false);
         }
-        if (state.PrimaryInferred && state.PrimaryAlias is not null)
+        if (state.PrimaryInferred && state.PrimaryAlias is not null) {
             reg.RestoreInferredPrimary(state.PrimaryAlias);
+        }
+
         return reg;
     }
 
     /// <summary>Serialize a runtime registry into its persisted form.</summary>
-    public static MaashRegistryState FromRegistry(ModuleRegistry reg)
-    {
+    public static MaashRegistryState FromRegistry(ModuleRegistry reg) {
         var s = new MaashRegistryState { PrimaryAlias = reg.PrimaryAlias, PrimaryInferred = reg.PrimaryInferred };
-        foreach (var m in reg.Modules)
-            s.Modules.Add(new LoadedModuleEntry
-            {
+        foreach (var m in reg.Modules) {
+            s.Modules.Add(new LoadedModuleEntry {
                 Module = m.Module,
                 Alias = m.Alias,
                 Infix = m.Infix,
-                Primary = m.Primary
+                IsPrimary = m.IsPrimary
             });
+        }
+
         return s;
     }
 

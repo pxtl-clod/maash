@@ -3,8 +3,7 @@ namespace Maash;
 using System;
 
 /// <summary>Bash integration snippet printed by <c>maash init</c>.</summary>
-public static class BashSnippet
-{
+public static class BashSnippet {
     public static readonly string Init =
 """
 # maash bash integration (add to .bashrc via: eval "$(maash init)")
